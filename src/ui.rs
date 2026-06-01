@@ -381,7 +381,12 @@ fn draw_name_modal(frame: &mut Frame, app: &App, title: &str) {
     frame.render_widget(para, area);
 }
 
-/// Единое окно правки: имя, ноты, задержки. Один бордер, без вложенных рамок.
+/// Единое окно правки. Раскладка:
+///   Имя | Клавиши/Строки
+///   ─────────────────────
+///   Ноты
+///   ─────────────────────
+///   Хоткеи
 fn draw_edit(frame: &mut Frame, app: &mut App) {
     let th = theme(app);
     let area = modal_rect(
@@ -406,26 +411,19 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // подсказки
-            Constraint::Length(1), // имя
-            Constraint::Length(1), // метка «Ноты»
-            Constraint::Min(3),    // редактор нот
-            Constraint::Length(1), // задержки
+            Constraint::Length(2), // имя | клавиши/строки
+            Constraint::Length(1), // ── разделитель
+            Constraint::Min(3),    // ноты
+            Constraint::Length(1), // ── разделитель
+            Constraint::Length(1), // хоткеи
         ])
         .split(inner);
 
-    // Подсказки: ключ — ярко, описание — тускло.
-    let key = |k: &str| Span::styled(k.to_string(), Style::default().fg(th).add_modifier(Modifier::BOLD));
-    let dim = |d: &str| Span::styled(d.to_string(), Style::default().fg(Color::DarkGray));
-    let hints = Line::from(vec![
-        key("Tab"),
-        dim(" поле     "),
-        key("Esc"),
-        dim(" сохранить     "),
-        key("Ctrl+Q"),
-        dim(" отмена"),
-    ]);
-    frame.render_widget(Paragraph::new(hints), rows[0]);
+    // --- Верх: имя слева, задержки справа (2 строки) ---
+    let top = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .split(rows[0]);
 
     // Имя (редактируемое).
     let name_active = app.edit_focus == EditFocus::Name;
@@ -442,51 +440,83 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     if name_active {
         name_spans.push(Span::styled("▏", Style::default().fg(th)));
     }
-    frame.render_widget(Paragraph::new(Line::from(name_spans)), rows[1]);
+    frame.render_widget(Paragraph::new(Line::from(name_spans)), top[0]);
 
-    // Метка «Ноты».
-    let notes_active = app.edit_focus == EditFocus::Notes;
-    let notes_label = Line::from(vec![
-        focus_marker(notes_active, th),
-        Span::styled(
-            "Ноты",
-            if notes_active {
-                Style::default().fg(th).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Gray)
-            },
-        ),
-    ]);
-    frame.render_widget(Paragraph::new(notes_label), rows[2]);
-
-    // Редактор нот — без своей рамки (один общий бордер у окна).
-    app.textarea.set_block(Block::default());
-    frame.render_widget(&app.textarea, rows[3]);
-
-    // Задержки одной строкой.
+    // Задержки — 2 строки справа от имени.
     let delays_active = app.edit_focus == EditFocus::Delays;
-    let val = |label: &str, value: &str, active: bool| -> Vec<Span<'static>> {
+    let field = |label: &str, value: &str, active: bool, lead: Span<'static>| -> Line<'static> {
         let vs = if active {
             Style::default().fg(Color::Black).bg(th).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Yellow)
         };
-        vec![
+        Line::from(vec![
+            lead,
             Span::styled(label.to_string(), Style::default().fg(Color::Gray)),
             Span::styled(format!(" {value} "), vs),
-        ]
+        ])
     };
-    let mut delay_spans = vec![focus_marker(delays_active, th)];
-    delay_spans.extend(val("клавиши", &app.input_keys, delays_active && app.delay_field == 0));
-    delay_spans.push(Span::raw("   "));
-    delay_spans.extend(val("строки", &app.input_lines, delays_active && app.delay_field == 1));
-    if delays_active {
-        delay_spans.push(Span::styled(
-            "    ←→ поле · ↑↓ ±0.001",
-            Style::default().fg(Color::DarkGray),
-        ));
+    let delays = Paragraph::new(vec![
+        field(
+            "Клавиши:",
+            &app.input_keys,
+            delays_active && app.delay_field == 0,
+            focus_marker(delays_active, th),
+        ),
+        field(
+            "Строки: ",
+            &app.input_lines,
+            delays_active && app.delay_field == 1,
+            Span::raw("  "),
+        ),
+    ]);
+    frame.render_widget(delays, top[1]);
+
+    // --- Разделитель ---
+    frame.render_widget(
+        Block::default().borders(Borders::TOP).border_style(Style::default().fg(th)),
+        rows[1],
+    );
+
+    // --- Ноты (редактор без своей рамки) ---
+    let notes_active = app.edit_focus == EditFocus::Notes;
+    if notes_active {
+        app.textarea
+            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        app.textarea
+            .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
+    } else {
+        app.textarea.set_cursor_style(Style::default());
+        app.textarea.set_cursor_line_style(Style::default());
     }
-    frame.render_widget(Paragraph::new(Line::from(delay_spans)), rows[4]);
+    app.textarea.set_block(Block::default());
+    frame.render_widget(&app.textarea, rows[2]);
+
+    // --- Разделитель ---
+    frame.render_widget(
+        Block::default().borders(Borders::TOP).border_style(Style::default().fg(th)),
+        rows[3],
+    );
+
+    // --- Хоткеи внизу: ключ ярко, описание тускло ---
+    let key = |k: &str| Span::styled(k.to_string(), Style::default().fg(th).add_modifier(Modifier::BOLD));
+    let dim = |d: &str| Span::styled(d.to_string(), Style::default().fg(Color::DarkGray));
+    let mut hint_spans = vec![
+        key("Tab"),
+        dim(" поле     "),
+        key("Esc"),
+        dim(" сохранить     "),
+        key("Ctrl+Q"),
+        dim(" отмена"),
+    ];
+    if delays_active {
+        hint_spans.push(dim("     "));
+        hint_spans.push(key("←→"));
+        hint_spans.push(dim(" поле  "));
+        hint_spans.push(key("↑↓"));
+        hint_spans.push(dim(" ±0.001"));
+    }
+    frame.render_widget(Paragraph::new(Line::from(hint_spans)), rows[4]);
 }
 
 /// Маркер фокуса секции: «▶ » активной, «  » иначе.
