@@ -111,13 +111,14 @@ fn run(
 
         while let Ok(msg) = amsg_rx.try_recv() {
             match msg {
+                AudioMsg::Progress(i) => app.play_event = i,
                 AudioMsg::Finished => {
                     app.audio_playing = false;
-                    app.status = "Звук: готово.".to_string();
+                    app.status = "Тест: готово.".to_string();
                 }
                 AudioMsg::Stopped => {
                     app.audio_playing = false;
-                    app.status = "Звук остановлен.".to_string();
+                    app.status = "Тест остановлен.".to_string();
                 }
                 AudioMsg::Error(e) => {
                     app.audio_playing = false;
@@ -194,20 +195,27 @@ fn start_audio(app: &mut App, stop: &Arc<AtomicBool>, audio_tx: &Sender<AudioReq
     if app.playing || app.audio_playing {
         return;
     }
-    let groups = parser::parse_pitches(&app.notes, app.between_keys, app.between_lines);
-    if groups.is_empty() {
-        app.status = "Нет нот для проигрывания звука.".to_string();
+    let parsed = parser::parse_pitches(&app.notes, app.between_keys, app.between_lines);
+    if parsed.groups.is_empty() {
+        app.status = "Нет нот для теста.".to_string();
         return;
     }
     stop.store(false, Ordering::Relaxed);
     app.audio_playing = true;
-    app.status = format!("♪ Звук… (громкость {}%)", app.volume_pct());
+    app.spans = parsed.spans;
+    app.play_event = 0;
+    app.status = format!("♪ Тест… (громкость {}%)", app.volume_pct());
     debug::log(&format!(
-        "main: запрос звука «{}», групп: {}",
+        "main: запрос теста «{}», групп: {}",
         app.current_name.as_deref().unwrap_or("—"),
-        groups.len()
+        parsed.groups.len()
     ));
-    if audio_tx.send(AudioRequest { groups }).is_err() {
+    if audio_tx
+        .send(AudioRequest {
+            groups: parsed.groups,
+        })
+        .is_err()
+    {
         app.audio_playing = false;
         app.status = "Аудио-поток недоступен.".to_string();
     }

@@ -206,14 +206,22 @@ pub fn pitch_of(ch: char) -> Option<u8> {
 /// Группа одновременных MIDI-нот и пауза после неё (в секундах).
 pub type PitchEvent = (Vec<u8>, f64);
 
-/// Разбирает нотную запись в музыкальные высоты для синтеза звука.
-pub fn parse_pitches(notes: &str, between_keys: f64, between_lines: f64) -> Vec<PitchEvent> {
-    let mut out = Vec::new();
+/// Результат разбора высот: группы нот + их позиции в тексте (1:1).
+#[derive(Default)]
+pub struct PitchParsed {
+    pub groups: Vec<PitchEvent>,
+    pub spans: Vec<TokenSpan>,
+}
 
-    for line in notes.split('\n') {
-        let mut groups: Vec<Vec<u8>> = Vec::new();
+/// Разбирает нотную запись в музыкальные высоты + позиции токенов (для караоке).
+pub fn parse_pitches(notes: &str, between_keys: f64, between_lines: f64) -> PitchParsed {
+    let mut out = PitchParsed::default();
+    let mut line_start = 0usize;
 
-        for token in line.split_whitespace() {
+    for (line_no, line) in notes.split('\n').enumerate() {
+        let mut groups: Vec<(Vec<u8>, TokenSpan)> = Vec::new();
+
+        for (token, s, e) in tokens_with_spans(line) {
             let is_chord = token.len() >= 2 && token.starts_with('[') && token.ends_with(']');
             let chars: &str = if is_chord {
                 &token[1..token.len() - 1]
@@ -222,15 +230,25 @@ pub fn parse_pitches(notes: &str, between_keys: f64, between_lines: f64) -> Vec<
             };
             let group: Vec<u8> = chars.chars().filter_map(pitch_of).collect();
             if !group.is_empty() {
-                groups.push(group);
+                groups.push((
+                    group,
+                    TokenSpan {
+                        line: line_no,
+                        start: line_start + s,
+                        end: line_start + e,
+                    },
+                ));
             }
         }
 
         let n = groups.len();
-        for (i, group) in groups.into_iter().enumerate() {
+        for (i, (group, span)) in groups.into_iter().enumerate() {
             let pause = if i + 1 == n { between_lines } else { between_keys };
-            out.push((group, pause));
+            out.groups.push((group, pause));
+            out.spans.push(span);
         }
+
+        line_start += line.len() + 1;
     }
 
     out
@@ -293,10 +311,11 @@ mod tests {
 
     #[test]
     fn pitch_chord_parsed() {
-        let ev = parse_pitches("[qe] r", 0.06, 0.1);
-        assert_eq!(ev.len(), 2);
-        assert_eq!(ev[0].0.len(), 2); // аккорд из двух нот
-        assert_eq!(ev[1].0.len(), 1);
+        let p = parse_pitches("[qe] r", 0.06, 0.1);
+        assert_eq!(p.groups.len(), 2);
+        assert_eq!(p.groups[0].0.len(), 2); // аккорд из двух нот
+        assert_eq!(p.groups[1].0.len(), 1);
+        assert_eq!(p.spans.len(), p.groups.len()); // спаны выровнены
     }
 
     #[test]

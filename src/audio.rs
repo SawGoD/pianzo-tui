@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rodio::buffer::SamplesBuffer;
 use rodio::{OutputStream, Sink};
@@ -29,6 +29,8 @@ pub struct AudioRequest {
 /// Сообщения от аудио-потока.
 #[derive(Debug)]
 pub enum AudioMsg {
+    /// Индекс текущей звучащей группы (для караоке-подсветки).
+    Progress(usize),
     Finished,
     Stopped,
     Error(String),
@@ -38,19 +40,21 @@ fn midi_to_freq(midi: u8) -> f32 {
     440.0 * 2f32.powf((midi as f32 - 69.0) / 12.0)
 }
 
-/// Синтезирует всю мелодию в один PCM-буфер (моно, f32).
-fn render(groups: &[PitchEvent]) -> Vec<f32> {
-    let sr = SAMPLE_RATE as f32;
-
-    // Время начала каждой группы — накопленная сумма пауз.
+/// Время начала каждой группы — накопленная сумма пауз (в секундах).
+fn compute_onsets(groups: &[PitchEvent]) -> Vec<f32> {
     let mut onsets = Vec::with_capacity(groups.len());
     let mut t = 0.0f32;
     for (_, pause) in groups {
         onsets.push(t);
         t += (*pause as f32).max(0.0);
     }
+    onsets
+}
 
-    let total = t + NOTE_DUR + 0.2;
+/// Синтезирует всю мелодию в один PCM-буфер (моно, f32).
+fn render(groups: &[PitchEvent], onsets: &[f32]) -> Vec<f32> {
+    let sr = SAMPLE_RATE as f32;
+    let total = onsets.last().copied().unwrap_or(0.0) + NOTE_DUR + 0.2;
     let len = (total * sr) as usize + 1;
     let mut buf = vec![0f32; len];
 
@@ -106,7 +110,8 @@ pub fn spawn(
         debug::log("audio: выход готов, поток ждёт мелодии");
 
         while let Ok(req) = rx.recv() {
-            let samples = render(&req.groups);
+            let onsets = compute_onsets(&req.groups);
+            let samples = render(&req.groups, &onsets);
             debug::log(&format!(
                 "audio: рендер {} групп, {} сэмплов",
                 req.groups.len(),
@@ -124,6 +129,8 @@ pub fn spawn(
             sink.set_volume(cur_vol);
             sink.append(SamplesBuffer::new(1, SAMPLE_RATE, samples));
 
+            let start = Instant::now();
+            let mut last_idx = usize::MAX;
             let mut stopped = false;
             while !sink.empty() {
                 if stop.load(Ordering::Relaxed) {
@@ -134,6 +141,16 @@ pub fn spawn(
                 // Живое изменение громкости.
                 if let Ok(v) = volume.lock() {
                     sink.set_volume(*v);
+                }
+                // Текущая звучащая группа по прошедшему времени — для караоке.
+                let elapsed = start.elapsed().as_secs_f32();
+                let idx = onsets
+                    .partition_point(|&o| o <= elapsed)
+                    .saturating_sub(1)
+                    .min(onsets.len().saturating_sub(1));
+                if idx != last_idx {
+                    last_idx = idx;
+                    let _ = tx.send(AudioMsg::Progress(idx));
                 }
                 thread::sleep(Duration::from_millis(20));
             }

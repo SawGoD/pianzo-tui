@@ -131,7 +131,7 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
     let title = format!(" Ноты ({note_count}) — [n/E] правка ");
     let block = Block::default().borders(Borders::ALL).title(title);
 
-    if app.playing && !app.spans.is_empty() {
+    if (app.playing || app.audio_playing) && !app.spans.is_empty() {
         let visible = area.height.saturating_sub(2) as usize;
         let total_lines = app.notes.split('\n').count();
         let cur_line = app
@@ -192,6 +192,10 @@ fn build_karaoke(app: &App) -> Text<'_> {
 
         let mut cursor = 0usize;
         for &(g, ts) in toks {
+            // Защита от устаревших спанов (если текст сменили во время игры).
+            if ts.start < base || ts.end > base + src.len() || ts.start > ts.end {
+                continue;
+            }
             let rs = ts.start - base;
             let re = ts.end - base;
             if rs > cursor {
@@ -222,7 +226,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         let (done, total) = app.progress;
         (format!("▶ ВОСПРОИЗВЕДЕНИЕ  {done}/{total}"), Color::Green)
     } else if app.audio_playing {
-        (format!("♪ ЗВУЧИТ  ({}%)", app.volume_pct()), Color::Magenta)
+        (format!("♪ ТЕСТ  ({}%)", app.volume_pct()), Color::Magenta)
     } else {
         (format!("● {}", app.status), Color::Cyan)
     };
@@ -265,7 +269,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     // По центру: действия с мелодией + звук.
     let center = Line::from(vec![
         Span::styled("t", Style::default().fg(Color::Magenta)),
-        Span::raw(" звук  "),
+        Span::raw(" тест  "),
         Span::styled("a", Style::default().fg(Color::Green)),
         Span::raw(" доб.  "),
         Span::styled("E", Style::default().fg(Color::Cyan)),
