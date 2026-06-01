@@ -98,10 +98,10 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         .highlight_symbol("➤ ");
     frame.render_stateful_widget(list, cols[0], &mut app.list_state);
 
-    // Правая колонка — задержки + ноты.
+    // Правая колонка — параметры + ноты.
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Min(3)])
+        .constraints([Constraint::Length(5), Constraint::Min(3)])
         .split(cols[1]);
 
     let params = Paragraph::new(vec![
@@ -113,8 +113,13 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
             Span::styled("Между строками:  ", Style::default().fg(Color::Gray)),
             Span::styled(format!("{:.3} c", app.between_lines), Style::default().fg(Color::Yellow)),
         ]),
+        Line::from(vec![
+            Span::styled("Громкость:       ", Style::default().fg(Color::Gray)),
+            Span::styled(format!("{}%", app.volume_pct()), Style::default().fg(Color::Magenta)),
+            Span::styled("   [+/-]", Style::default().fg(Color::DarkGray)),
+        ]),
     ])
-    .block(Block::default().borders(Borders::ALL).title(" Задержки — [E] правка "));
+    .block(Block::default().borders(Borders::ALL).title(" Параметры — [E] задержки "));
     frame.render_widget(params, right[0]);
 
     draw_notes_panel(frame, app, right[1]);
@@ -216,6 +221,8 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else if app.playing {
         let (done, total) = app.progress;
         (format!("▶ ВОСПРОИЗВЕДЕНИЕ  {done}/{total}"), Color::Green)
+    } else if app.audio_playing {
+        (format!("♪ ЗВУЧИТ  ({}%)", app.volume_pct()), Color::Magenta)
     } else {
         (format!("● {}", app.status), Color::Cyan)
     };
@@ -237,9 +244,9 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(28),
-            Constraint::Percentage(22),
+            Constraint::Percentage(36),
+            Constraint::Percentage(34),
+            Constraint::Percentage(30),
         ])
         .split(inner);
 
@@ -255,18 +262,22 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         Span::raw(" выбор"),
     ]);
 
-    // По центру: действия с мелодией.
+    // По центру: действия с мелодией + звук.
     let center = Line::from(vec![
+        Span::styled("t", Style::default().fg(Color::Magenta)),
+        Span::raw(" звук  "),
         Span::styled("a", Style::default().fg(Color::Green)),
-        Span::raw(" добавить  "),
+        Span::raw(" доб.  "),
         Span::styled("E", Style::default().fg(Color::Cyan)),
         Span::raw(" правка  "),
         Span::styled("d", Style::default().fg(Color::Cyan)),
-        Span::raw(" удалить"),
+        Span::raw(" удал."),
     ]);
 
-    // Справа: настройки и выход.
+    // Справа: громкость, настройки, выход.
     let right = Line::from(vec![
+        Span::styled("+/-", Style::default().fg(Color::Magenta)),
+        Span::raw(" громк.  "),
         Span::styled("h", Style::default().fg(Color::Yellow)),
         Span::raw(" хоткеи  "),
         Span::styled("q", Style::default().fg(Color::Magenta)),

@@ -116,18 +116,38 @@ fn config_path() -> PathBuf {
     p
 }
 
-/// Загружает настройки хоткеев (или значения по умолчанию).
-pub fn load_config() -> HotkeyConfig {
+fn default_volume() -> f32 {
+    0.5
+}
+
+/// Сохраняемый конфиг: хоткеи + громкость звука.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredConfig {
+    #[serde(flatten)]
+    hotkeys: HotkeyConfig,
+    #[serde(default = "default_volume")]
+    volume: f32,
+}
+
+/// Загружает хоткеи и громкость (или значения по умолчанию).
+pub fn load_config() -> (HotkeyConfig, f32) {
     match fs::read_to_string(config_path()) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
-        Err(_) => HotkeyConfig::default(),
+        Ok(s) => match serde_json::from_str::<StoredConfig>(&s) {
+            Ok(c) => (c.hotkeys, c.volume.clamp(0.0, 1.0)),
+            Err(_) => (HotkeyConfig::default(), default_volume()),
+        },
+        Err(_) => (HotkeyConfig::default(), default_volume()),
     }
 }
 
-/// Сохраняет настройки хоткеев.
-pub fn save_config(config: &HotkeyConfig) -> std::io::Result<()> {
+/// Сохраняет хоткеи и громкость.
+pub fn save_config(hotkeys: &HotkeyConfig, volume: f32) -> std::io::Result<()> {
     let dir = piano_dir();
     fs::create_dir_all(&dir)?;
-    let json = serde_json::to_string_pretty(config).unwrap_or_else(|_| "{}".to_string());
+    let stored = StoredConfig {
+        hotkeys: *hotkeys,
+        volume,
+    };
+    let json = serde_json::to_string_pretty(&stored).unwrap_or_else(|_| "{}".to_string());
     fs::write(config_path(), json)
 }

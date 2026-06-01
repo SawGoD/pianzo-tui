@@ -65,9 +65,13 @@ pub struct App {
 
     /// Конфиг хоткеев (общий со слушателем).
     pub hotkeys: Arc<Mutex<HotkeyConfig>>,
+    /// Громкость звука 0.0–1.0 (общая с аудио-потоком).
+    pub volume: Arc<Mutex<f32>>,
 
     pub status: String,
     pub playing: bool,
+    /// Идёт ли проигрывание звука (а не нажатие клавиш).
+    pub audio_playing: bool,
     /// Если идёт обратный отсчёт перед стартом — осталось секунд.
     pub countdown: Option<u64>,
     pub progress: (usize, usize),
@@ -82,7 +86,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let bookmarks = storage::load_bookmarks();
-        let config = storage::load_config();
+        let (config, volume) = storage::load_config();
         let mut list_state = ListState::default();
         if !bookmarks.is_empty() {
             list_state.select(Some(0));
@@ -104,8 +108,10 @@ impl App {
             creating: None,
             textarea: TextArea::default(),
             hotkeys: Arc::new(Mutex::new(config)),
+            volume: Arc::new(Mutex::new(volume)),
             status: String::new(),
             playing: false,
+            audio_playing: false,
             countdown: None,
             progress: (0, 0),
             spans: Vec::new(),
@@ -297,11 +303,18 @@ impl App {
         *buf = format!("{next:.3}");
     }
 
+    /// Сохраняет текущие хоткеи и громкость в конфиг.
+    fn persist_config(&self) -> std::io::Result<()> {
+        let cfg = *self.hotkeys.lock().unwrap();
+        let vol = *self.volume.lock().unwrap();
+        storage::save_config(&cfg, vol)
+    }
+
     /// Сбрасывает хоткеи к значениям по умолчанию и сохраняет конфиг.
     pub fn reset_hotkeys(&mut self) {
         let cfg = HotkeyConfig::default();
         *self.hotkeys.lock().unwrap() = cfg;
-        if let Err(e) = storage::save_config(&cfg) {
+        if let Err(e) = self.persist_config() {
             self.status = format!("Ошибка сохранения конфига: {e}");
         } else {
             self.status = format!(
@@ -323,7 +336,7 @@ impl App {
             }
             *guard
         };
-        if let Err(e) = storage::save_config(&cfg) {
+        if let Err(e) = self.persist_config() {
             self.status = format!("Ошибка сохранения конфига: {e}");
         } else {
             self.status = format!(
@@ -332,5 +345,20 @@ impl App {
                 cfg.stop.label()
             );
         }
+    }
+
+    /// Текущая громкость в процентах.
+    pub fn volume_pct(&self) -> u32 {
+        (*self.volume.lock().unwrap() * 100.0).round() as u32
+    }
+
+    /// Меняет громкость на `delta` (с зажимом 0–1) и сохраняет конфиг.
+    pub fn change_volume(&mut self, delta: f32) {
+        {
+            let mut v = self.volume.lock().unwrap();
+            *v = (*v + delta).clamp(0.0, 1.0);
+        }
+        let _ = self.persist_config();
+        self.status = format!("Громкость: {}%", self.volume_pct());
     }
 }

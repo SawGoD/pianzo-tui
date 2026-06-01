@@ -1,4 +1,5 @@
 mod app;
+mod audio;
 mod debug;
 mod hotkeys;
 mod parser;
@@ -15,6 +16,7 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use app::{App, EditFocus, Mode};
+use audio::{AudioMsg, AudioRequest};
 use hotkeys::HotkeyCmd;
 use parser::Event as NoteEvent;
 use player::PlayerMsg;
@@ -23,6 +25,8 @@ fn main() -> io::Result<()> {
     let (hk_tx, hk_rx) = mpsc::channel::<HotkeyCmd>();
     let (pl_tx, pl_rx) = mpsc::channel::<PlayerMsg>();
     let (play_tx, play_rx) = mpsc::channel::<Vec<NoteEvent>>();
+    let (audio_tx, audio_rx) = mpsc::channel::<AudioRequest>();
+    let (amsg_tx, amsg_rx) = mpsc::channel::<AudioMsg>();
     let stop = Arc::new(AtomicBool::new(false));
 
     let mut app = App::new();
@@ -30,8 +34,10 @@ fn main() -> io::Result<()> {
 
     // Слушатель глобальной клавиатуры с общим конфигом хоткеев.
     hotkeys::spawn(hk_tx, Arc::clone(&app.hotkeys));
-    // Постоянный поток воспроизведения.
+    // Постоянный поток воспроизведения клавиш.
     player::spawn(play_rx, Arc::clone(&stop), pl_tx);
+    // Постоянный аудио-поток.
+    audio::spawn(audio_rx, Arc::clone(&stop), amsg_tx, Arc::clone(&app.volume));
 
     let mut terminal = ratatui::init();
 
@@ -42,18 +48,21 @@ fn main() -> io::Result<()> {
         prev_hook(info);
     }));
 
-    let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &stop);
+    let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &amsg_rx, &audio_tx, &stop);
     ratatui::restore();
     debug::log("=== выход piano-tui ===");
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
     hk_rx: &Receiver<HotkeyCmd>,
     pl_rx: &Receiver<PlayerMsg>,
     play_tx: &Sender<Vec<NoteEvent>>,
+    amsg_rx: &Receiver<AudioMsg>,
+    audio_tx: &Sender<AudioRequest>,
     stop: &Arc<AtomicBool>,
 ) -> io::Result<()> {
     loop {
@@ -100,6 +109,23 @@ fn run(
             }
         }
 
+        while let Ok(msg) = amsg_rx.try_recv() {
+            match msg {
+                AudioMsg::Finished => {
+                    app.audio_playing = false;
+                    app.status = "Звук: готово.".to_string();
+                }
+                AudioMsg::Stopped => {
+                    app.audio_playing = false;
+                    app.status = "Звук остановлен.".to_string();
+                }
+                AudioMsg::Error(e) => {
+                    app.audio_playing = false;
+                    app.status = e;
+                }
+            }
+        }
+
         if event::poll(Duration::from_millis(50))? {
             let ev = event::read()?;
             if let Event::Key(key) = ev {
@@ -114,7 +140,7 @@ fn run(
                 } else if matches!(app.mode, Mode::CaptureStart | Mode::CaptureStop) {
                     handle_capture(app, key);
                 } else {
-                    handle_key(app, key, stop, play_tx);
+                    handle_key(app, key, stop, play_tx, audio_tx);
                 }
             }
         }
@@ -126,7 +152,7 @@ fn run(
 }
 
 fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<NoteEvent>>) {
-    if app.playing {
+    if app.playing || app.audio_playing {
         return;
     }
     let parsed = parser::parse(&app.notes, app.between_keys, app.between_lines);
@@ -157,10 +183,33 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
 }
 
 fn stop_playback(app: &mut App, stop: &Arc<AtomicBool>) {
-    if app.playing {
+    if app.playing || app.audio_playing {
         stop.store(true, Ordering::Relaxed);
         app.status = "Остановка...".to_string();
         debug::log("main: запрошена остановка");
+    }
+}
+
+fn start_audio(app: &mut App, stop: &Arc<AtomicBool>, audio_tx: &Sender<AudioRequest>) {
+    if app.playing || app.audio_playing {
+        return;
+    }
+    let groups = parser::parse_pitches(&app.notes, app.between_keys, app.between_lines);
+    if groups.is_empty() {
+        app.status = "Нет нот для проигрывания звука.".to_string();
+        return;
+    }
+    stop.store(false, Ordering::Relaxed);
+    app.audio_playing = true;
+    app.status = format!("♪ Звук… (громкость {}%)", app.volume_pct());
+    debug::log(&format!(
+        "main: запрос звука «{}», групп: {}",
+        app.current_name.as_deref().unwrap_or("—"),
+        groups.len()
+    ));
+    if audio_tx.send(AudioRequest { groups }).is_err() {
+        app.audio_playing = false;
+        app.status = "Аудио-поток недоступен.".to_string();
     }
 }
 
@@ -223,9 +272,15 @@ fn handle_capture(app: &mut App, key: KeyEvent) {
 
 // --- Обычные режимы ---
 
-fn handle_key(app: &mut App, key: KeyEvent, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<NoteEvent>>) {
+fn handle_key(
+    app: &mut App,
+    key: KeyEvent,
+    stop: &Arc<AtomicBool>,
+    play_tx: &Sender<Vec<NoteEvent>>,
+    audio_tx: &Sender<AudioRequest>,
+) {
     match app.mode {
-        Mode::Normal => handle_normal(app, key, stop, play_tx),
+        Mode::Normal => handle_normal(app, key, stop, play_tx, audio_tx),
         Mode::AddName => handle_add_name(app, key),
         Mode::SaveBookmark => handle_save_input(app, key),
         Mode::ConfirmDelete => handle_confirm_delete(app, key),
@@ -239,6 +294,7 @@ fn handle_normal(
     key: KeyEvent,
     stop: &Arc<AtomicBool>,
     play_tx: &Sender<Vec<NoteEvent>>,
+    audio_tx: &Sender<AudioRequest>,
 ) {
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
@@ -261,6 +317,9 @@ fn handle_normal(
         }
         KeyCode::Char('d') if app.selected().is_some() => app.mode = Mode::ConfirmDelete,
         KeyCode::Char('p') => start_playback(app, stop, play_tx),
+        KeyCode::Char('t') | KeyCode::Char('T') => start_audio(app, stop, audio_tx),
+        KeyCode::Char('+') | KeyCode::Char('=') => app.change_volume(0.1),
+        KeyCode::Char('-') | KeyCode::Char('_') => app.change_volume(-0.1),
         _ => {}
     }
 }
