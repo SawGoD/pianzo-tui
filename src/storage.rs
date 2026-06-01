@@ -17,7 +17,8 @@ pub struct Bookmark {
     pub between_lines: f64,
 }
 
-/// Каталог с мелодиями: `~/Documents/Piano`.
+/// Корневой каталог приложения: `~/Documents/Piano`
+/// (здесь лежат `config.json` и лог).
 pub fn piano_dir() -> PathBuf {
     let mut p = dirs::document_dir().unwrap_or_else(|| {
         let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -25,6 +26,13 @@ pub fn piano_dir() -> PathBuf {
         home
     });
     p.push("Piano");
+    p
+}
+
+/// Каталог с мелодиями: `~/Documents/Piano/tracks`.
+pub fn tracks_dir() -> PathBuf {
+    let mut p = piano_dir();
+    p.push("tracks");
     p
 }
 
@@ -48,11 +56,38 @@ fn sanitize(name: &str) -> String {
     }
 }
 
-/// Путь к файлу мелодии по её имени.
+/// Путь к файлу мелодии по её имени (в каталоге `tracks`).
 pub fn file_path(name: &str) -> PathBuf {
-    let mut p = piano_dir();
+    let mut p = tracks_dir();
     p.push(format!("{}.json", sanitize(name)));
     p
+}
+
+/// Переносит мелодии из старого расположения (`Piano/*.json`) в `Piano/tracks/`.
+fn migrate_legacy() {
+    let root = piano_dir();
+    let legacy: Vec<PathBuf> = match fs::read_dir(&root) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension().and_then(|s| s.to_str()) == Some("json")
+                    && p.file_name().and_then(|s| s.to_str()) != Some("config.json")
+            })
+            .collect(),
+        Err(_) => return,
+    };
+    if legacy.is_empty() {
+        return;
+    }
+    let tracks = tracks_dir();
+    let _ = fs::create_dir_all(&tracks);
+    for p in legacy {
+        if let Some(name) = p.file_name() {
+            let _ = fs::rename(&p, tracks.join(name));
+        }
+    }
 }
 
 /// Мелодия по умолчанию — «Für Elise» из оригинального temp.txt.
@@ -65,16 +100,14 @@ fn default_bookmark() -> Bookmark {
     }
 }
 
-/// Загружает все мелодии из каталога. При первом запуске создаёт каталог
-/// и засеивает пример.
+/// Загружает все мелодии из `Piano/tracks`. На первом запуске засеивает пример;
+/// при необходимости переносит мелодии из старого расположения.
 pub fn load_bookmarks() -> Vec<Bookmark> {
-    let dir = piano_dir();
-    if !dir.exists() {
-        let _ = fs::create_dir_all(&dir);
-        let seed = default_bookmark();
-        let _ = save_bookmark(&seed);
-        return vec![seed];
-    }
+    let dir = tracks_dir();
+    // Первый запуск, если нет ни каталога tracks, ни старых файлов в корне.
+    let first_run = !dir.exists() && !has_legacy();
+    migrate_legacy();
+    let _ = fs::create_dir_all(&dir);
 
     let mut out = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
@@ -89,13 +122,33 @@ pub fn load_bookmarks() -> Vec<Bookmark> {
             }
         }
     }
+
+    if out.is_empty() && first_run {
+        let seed = default_bookmark();
+        let _ = save_bookmark(&seed);
+        out.push(seed);
+    }
+
     out.sort_by_key(|b| b.name.to_lowercase());
     out
 }
 
-/// Сохраняет одну мелодию в свой файл.
+/// Есть ли мелодии в старом расположении (`Piano/*.json`, кроме config.json).
+fn has_legacy() -> bool {
+    match fs::read_dir(piano_dir()) {
+        Ok(entries) => entries.flatten().any(|e| {
+            let p = e.path();
+            p.is_file()
+                && p.extension().and_then(|s| s.to_str()) == Some("json")
+                && p.file_name().and_then(|s| s.to_str()) != Some("config.json")
+        }),
+        Err(_) => false,
+    }
+}
+
+/// Сохраняет одну мелодию в свой файл (в каталоге `tracks`).
 pub fn save_bookmark(b: &Bookmark) -> std::io::Result<()> {
-    let dir = piano_dir();
+    let dir = tracks_dir();
     fs::create_dir_all(&dir)?;
     let json = serde_json::to_string_pretty(b).unwrap_or_else(|_| "{}".to_string());
     fs::write(file_path(&b.name), json)

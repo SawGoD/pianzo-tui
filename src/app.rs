@@ -314,7 +314,7 @@ impl App {
             self.between_keys = bk;
             self.between_lines = bl;
         }
-        self.status = format!("Сохранено в Documents/Piano: {name}");
+        self.status = format!("Сохранено в Documents/Piano/tracks: {name}");
     }
 
     /// Сохраняет НАВЕДЁННУЮ закладку под (новым) именем — дубликат/переименование.
