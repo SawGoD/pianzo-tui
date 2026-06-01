@@ -70,13 +70,14 @@ fn run(
 
         while let Ok(cmd) = hk_rx.try_recv() {
             match cmd {
-                // Старт работает только в обычном режиме — чтобы глобальный
-                // хоткей не мешал вводу в окнах правки/имени/нот/хоткеев.
-                HotkeyCmd::Start if app.mode == Mode::Normal => {
+                // Старт работает только когда FOCUSED и в обычном режиме —
+                // чтобы глобальный хоткей не мешал вводу и не срабатывал,
+                // пока ты в другом окне (UNFOCUSED).
+                HotkeyCmd::Start if app.focused && app.mode == Mode::Normal => {
                     start_playback(app, stop, play_tx)
                 }
                 HotkeyCmd::Start => {
-                    debug::log("main: старт проигнорирован (открыто модальное окно)");
+                    debug::log("main: старт проигнорирован (UNFOCUSED или модальное окно)");
                 }
                 HotkeyCmd::Stop => stop_playback(app, stop),
                 HotkeyCmd::ListenError(e) => {
@@ -333,6 +334,7 @@ fn handle_normal(
         KeyCode::Char('d') if app.selected().is_some() => app.mode = Mode::ConfirmDelete,
         KeyCode::Char('p') => start_playback(app, stop, play_tx),
         KeyCode::Char('t') | KeyCode::Char('T') => start_audio(app, stop, audio_tx),
+        KeyCode::Char('u') | KeyCode::Char('U') => app.toggle_focus(),
         KeyCode::Char('+') | KeyCode::Char('=') => app.change_volume(0.1),
         KeyCode::Char('-') | KeyCode::Char('_') => app.change_volume(-0.1),
         _ => {}

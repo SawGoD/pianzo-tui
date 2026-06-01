@@ -68,6 +68,10 @@ pub struct App {
     /// Громкость звука 0.0–1.0 (общая с аудио-потоком).
     pub volume: Arc<Mutex<f32>>,
 
+    /// Активно ли реагирование на глобальный старт-хоткей.
+    /// true = FOCUSED (норма), false = UNFOCUSED (старт не ловится вне терминала).
+    pub focused: bool,
+
     pub status: String,
     pub playing: bool,
     /// Идёт ли проигрывание звука (а не нажатие клавиш).
@@ -109,6 +113,7 @@ impl App {
             textarea: TextArea::default(),
             hotkeys: Arc::new(Mutex::new(config)),
             volume: Arc::new(Mutex::new(volume)),
+            focused: true,
             status: String::new(),
             playing: false,
             audio_playing: false,
@@ -345,6 +350,16 @@ impl App {
                 cfg.stop.label()
             );
         }
+    }
+
+    /// Переключает слежение за глобальным стартом (FOCUSED/UNFOCUSED).
+    pub fn toggle_focus(&mut self) {
+        self.focused = !self.focused;
+        self.status = if self.focused {
+            "FOCUSED — старт-хоткей активен.".to_string()
+        } else {
+            "UNFOCUSED — старт-хоткей отключён (стоп работает).".to_string()
+        };
     }
 
     /// Текущая громкость в процентах.

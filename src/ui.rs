@@ -11,6 +11,15 @@ use ratatui::{
 use crate::app::{App, EditFocus, Mode};
 use crate::parser::TokenSpan;
 
+/// Цвет рамок интерфейса: фиолетовый в FOCUSED, белый в UNFOCUSED.
+fn theme(app: &App) -> Color {
+    if app.focused {
+        Color::Magenta
+    } else {
+        Color::White
+    }
+}
+
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -40,9 +49,20 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
+    let th = theme(app);
     let name = app.current_name.as_deref().unwrap_or("—");
+    let focus_label = if app.focused {
+        "● FOCUSED"
+    } else {
+        "○ UNFOCUSED"
+    };
     let mut spans = vec![
-        Span::styled("piano-tui", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            focus_label,
+            Style::default().fg(th).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("   "),
+        Span::styled("piano-tui", Style::default().fg(th).add_modifier(Modifier::BOLD)),
         Span::raw("  ·  "),
         Span::styled(name.to_string(), Style::default().fg(Color::Green)),
     ];
@@ -59,12 +79,17 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
     let para = Paragraph::new(Line::from(spans))
-        .block(Block::default().borders(Borders::ALL))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(th)),
+        )
         .alignment(Alignment::Center);
     frame.render_widget(para, area);
 }
 
 fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
+    let th = theme(app);
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
@@ -93,7 +118,12 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(" Закладки "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(th))
+                .title(" Закладки "),
+        )
         .highlight_style(Style::default().bg(Color::Blue).add_modifier(Modifier::BOLD))
         .highlight_symbol("➤ ");
     frame.render_stateful_widget(list, cols[0], &mut app.list_state);
@@ -119,7 +149,12 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
             Span::styled("   [+/-]", Style::default().fg(Color::DarkGray)),
         ]),
     ])
-    .block(Block::default().borders(Borders::ALL).title(" Параметры — [E] задержки "));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(th))
+            .title(" Параметры — [E] задержки "),
+    );
     frame.render_widget(params, right[0]);
 
     draw_notes_panel(frame, app, right[1]);
@@ -129,7 +164,10 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
 fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
     let note_count = app.notes.split_whitespace().count();
     let title = format!(" Ноты ({note_count}) — [n/E] правка ");
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme(app)))
+        .title(title);
 
     if (app.playing || app.audio_playing) && !app.spans.is_empty() {
         let visible = area.height.saturating_sub(2) as usize;
@@ -234,23 +272,30 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         text,
         Style::default().fg(color).add_modifier(Modifier::BOLD),
     )))
-    .block(Block::default().borders(Borders::ALL).title(" Статус "));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme(app)))
+            .title(" Статус "),
+    );
     frame.render_widget(para, area);
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let cfg = *app.hotkeys.lock().unwrap();
 
-    let block = Block::default().borders(Borders::ALL);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme(app)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(36),
-            Constraint::Percentage(34),
+            Constraint::Percentage(32),
             Constraint::Percentage(30),
+            Constraint::Percentage(38),
         ])
         .split(inner);
 
@@ -278,10 +323,12 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         Span::raw(" удал."),
     ]);
 
-    // Справа: громкость, настройки, выход.
+    // Справа: громкость, фокус, настройки, выход.
     let right = Line::from(vec![
         Span::styled("+/-", Style::default().fg(Color::Magenta)),
         Span::raw(" громк.  "),
+        Span::styled("u", Style::default().fg(Color::Yellow)),
+        Span::raw(" фокус  "),
         Span::styled("h", Style::default().fg(Color::Yellow)),
         Span::raw(" хоткеи  "),
         Span::styled("q", Style::default().fg(Color::Magenta)),
