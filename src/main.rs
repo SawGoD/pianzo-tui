@@ -247,19 +247,26 @@ fn handle_edit(app: &mut App, key: KeyEvent, ev: Event) {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     match key.code {
         KeyCode::Esc => return app.commit_edit(),
-        KeyCode::Char('s') if ctrl => return app.commit_edit(),
         KeyCode::Char('q') if ctrl => return app.cancel_edit(),
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.edit_focus = match app.edit_focus {
-                EditFocus::Notes => EditFocus::Delays,
-                EditFocus::Delays => EditFocus::Notes,
-            };
+        KeyCode::Tab => {
+            app.edit_focus = app.edit_focus.next();
+            return;
+        }
+        KeyCode::BackTab => {
+            app.edit_focus = app.edit_focus.prev();
             return;
         }
         _ => {}
     }
 
     match app.edit_focus {
+        EditFocus::Name => match key.code {
+            KeyCode::Char(c) => app.input.push(c),
+            KeyCode::Backspace => {
+                app.input.pop();
+            }
+            _ => {}
+        },
         EditFocus::Notes => {
             app.textarea.input(ev);
         }

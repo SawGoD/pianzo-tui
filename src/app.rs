@@ -33,8 +33,29 @@ pub enum Mode {
 /// Фокус внутри окна правки.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EditFocus {
+    Name,
     Notes,
     Delays,
+}
+
+impl EditFocus {
+    /// Следующий фокус по Tab.
+    pub fn next(self) -> Self {
+        match self {
+            EditFocus::Name => EditFocus::Notes,
+            EditFocus::Notes => EditFocus::Delays,
+            EditFocus::Delays => EditFocus::Name,
+        }
+    }
+
+    /// Предыдущий фокус по Shift+Tab.
+    pub fn prev(self) -> Self {
+        match self {
+            EditFocus::Name => EditFocus::Delays,
+            EditFocus::Notes => EditFocus::Name,
+            EditFocus::Delays => EditFocus::Notes,
+        }
+    }
 }
 
 pub struct App {
@@ -196,6 +217,7 @@ impl App {
             return;
         };
         self.textarea = TextArea::new(b.notes.lines().map(String::from).collect());
+        self.input = b.name.clone();
         self.input_keys = format!("{:.3}", b.between_keys);
         self.input_lines = format!("{:.3}", b.between_lines);
         self.delay_field = 0;
@@ -214,6 +236,7 @@ impl App {
             return;
         }
         self.textarea = TextArea::default();
+        self.input = name.clone();
         self.input_keys = "0.110".to_string();
         self.input_lines = "0.110".to_string();
         self.delay_field = 0;
@@ -223,21 +246,32 @@ impl App {
         self.mode = Mode::Edit;
     }
 
-    /// Сохраняет правки (ноты + задержки) в нужную закладку.
+    /// Сохраняет правки (имя + ноты + задержки). Имя можно менять прямо в окне.
     pub fn commit_edit(&mut self) {
+        let new_name = self.input.trim().to_string();
+        if new_name.is_empty() {
+            self.status = "Имя не может быть пустым — исправь и сохрани.".to_string();
+            return; // не закрываем окно
+        }
         let notes = self.textarea.lines().join("\n");
         let (bk, bl) = self.parse_delay_bufs();
-        let name = self.creating.take().or_else(|| self.editing.take());
-        match name {
-            Some(n) => {
-                self.store_bookmark(n, notes, bk, bl);
-                self.mode = Mode::Normal;
-            }
-            None => {
-                self.input.clear();
-                self.mode = Mode::SaveBookmark;
+        let creating = self.creating.take();
+        let editing = self.editing.take();
+
+        // Переименование: правили существующую под другим именем.
+        if let Some(orig) = editing {
+            if orig != new_name {
+                let _ = storage::delete_bookmark(&orig);
+                self.bookmarks.retain(|b| b.name != orig);
+                if self.current_name.as_deref() == Some(orig.as_str()) {
+                    self.current_name = Some(new_name.clone());
+                }
             }
         }
+        let _ = creating; // создание — просто сохраняем под new_name
+
+        self.store_bookmark(new_name, notes, bk, bl);
+        self.mode = Mode::Normal;
     }
 
     pub fn cancel_edit(&mut self) {
