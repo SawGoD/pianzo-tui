@@ -307,6 +307,10 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_hotkey_menu(app: &mut App, key: KeyEvent) {
+    if key.code == KeyCode::Backspace && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.reset_hotkeys();
+        return;
+    }
     match key.code {
         KeyCode::Char('1') => {
             app.mode = Mode::CaptureStart;

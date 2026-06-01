@@ -297,6 +297,21 @@ impl App {
         *buf = format!("{next:.3}");
     }
 
+    /// Сбрасывает хоткеи к значениям по умолчанию и сохраняет конфиг.
+    pub fn reset_hotkeys(&mut self) {
+        let cfg = HotkeyConfig::default();
+        *self.hotkeys.lock().unwrap() = cfg;
+        if let Err(e) = storage::save_config(&cfg) {
+            self.status = format!("Ошибка сохранения конфига: {e}");
+        } else {
+            self.status = format!(
+                "Хоткеи сброшены: старт {}, стоп {}",
+                cfg.start.label(),
+                cfg.stop.label()
+            );
+        }
+    }
+
     /// Применяет новую привязку хоткея и сохраняет конфиг.
     pub fn set_hotkey(&mut self, start: bool, spec: crate::hotkeys::HotkeySpec) {
         let cfg = {

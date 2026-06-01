@@ -128,12 +128,15 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     if app.playing && !app.spans.is_empty() {
         let visible = area.height.saturating_sub(2) as usize;
+        let total_lines = app.notes.split('\n').count();
         let cur_line = app
             .spans
             .get(app.play_event.min(app.spans.len() - 1))
             .map(|s| s.line)
             .unwrap_or(0);
-        let scroll = cur_line.saturating_sub(visible / 3) as u16;
+        // Центрируем текущую строку и не даём прокрутке уйти за пределы текста.
+        let max_scroll = total_lines.saturating_sub(visible);
+        let scroll = cur_line.saturating_sub(visible / 2).min(max_scroll) as u16;
         let text = build_karaoke(app);
         let para = Paragraph::new(text).block(block).scroll((scroll, 0));
         frame.render_widget(para, area);
@@ -165,23 +168,25 @@ fn build_karaoke(app: &App) -> Text<'_> {
         .add_modifier(Modifier::BOLD);
     let future = Style::default().fg(Color::White);
 
+    // Раскладываем спаны по строкам за один проход (спаны уже идут по порядку).
+    let mut buckets: Vec<Vec<(usize, &TokenSpan)>> = vec![Vec::new(); src_lines.len()];
+    for (g, s) in app.spans.iter().enumerate() {
+        if s.line < buckets.len() {
+            buckets[s.line].push((g, s));
+        }
+    }
+
     let mut lines: Vec<Line> = Vec::with_capacity(src_lines.len());
     for (li, src) in src_lines.iter().enumerate() {
         let base = offsets[li];
-        let mut toks: Vec<(usize, &TokenSpan)> = app
-            .spans
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.line == li)
-            .collect();
-        toks.sort_by_key(|(_, s)| s.start);
+        let toks = &buckets[li];
 
         let mut spans: Vec<Span> = Vec::new();
         let marker = if Some(li) == cur_line { "▶ " } else { "  " };
         spans.push(Span::styled(marker, Style::default().fg(Color::Green)));
 
         let mut cursor = 0usize;
-        for (g, ts) in toks {
+        for &(g, ts) in toks {
             let rs = ts.start - base;
             let re = ts.end - base;
             if rs > cursor {
@@ -224,32 +229,53 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let cfg = *app.hotkeys.lock().unwrap();
-    let hint = Line::from(vec![
+
+    let block = Block::default().borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Percentage(28),
+            Constraint::Percentage(22),
+        ])
+        .split(inner);
+
+    // Слева: старт / стоп + выбор.
+    let left = Line::from(vec![
         Span::styled(cfg.start.label(), Style::default().fg(Color::Green)),
         Span::raw(" старт  "),
         Span::styled(cfg.stop.label(), Style::default().fg(Color::Red)),
-        Span::raw(" стоп  "),
+        Span::raw(" стоп   "),
         Span::styled("↑↓", Style::default().fg(Color::Cyan)),
-        Span::raw(" выбор  "),
+        Span::raw("/"),
         Span::styled("Enter", Style::default().fg(Color::Cyan)),
-        Span::raw(" загрузить  "),
+        Span::raw(" выбор"),
+    ]);
+
+    // По центру: действия с мелодией.
+    let center = Line::from(vec![
         Span::styled("a", Style::default().fg(Color::Green)),
         Span::raw(" добавить  "),
         Span::styled("E", Style::default().fg(Color::Cyan)),
         Span::raw(" правка  "),
-        Span::styled("s", Style::default().fg(Color::Cyan)),
-        Span::raw(" сохранить  "),
         Span::styled("d", Style::default().fg(Color::Cyan)),
-        Span::raw(" удалить  "),
+        Span::raw(" удалить"),
+    ]);
+
+    // Справа: настройки и выход.
+    let right = Line::from(vec![
         Span::styled("h", Style::default().fg(Color::Yellow)),
         Span::raw(" хоткеи  "),
         Span::styled("q", Style::default().fg(Color::Magenta)),
         Span::raw(" выход"),
     ]);
-    let para = Paragraph::new(hint)
-        .block(Block::default().borders(Borders::ALL))
-        .alignment(Alignment::Center);
-    frame.render_widget(para, area);
+
+    frame.render_widget(Paragraph::new(left).alignment(Alignment::Left), cols[0]);
+    frame.render_widget(Paragraph::new(center).alignment(Alignment::Center), cols[1]);
+    frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), cols[2]);
 }
 
 // --- Модальные окна ---
@@ -385,7 +411,7 @@ fn draw_confirm_delete(frame: &mut Frame, app: &App) {
 
 fn draw_hotkey_menu(frame: &mut Frame, app: &App) {
     let cfg = *app.hotkeys.lock().unwrap();
-    let area = modal_rect(56, 6, frame.area());
+    let area = modal_rect(56, 7, frame.area());
     frame.render_widget(Clear, area);
     let para = Paragraph::new(vec![
         Line::from(vec![
@@ -397,7 +423,7 @@ fn draw_hotkey_menu(frame: &mut Frame, app: &App) {
             Span::styled(cfg.stop.label(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(Span::styled(
-            "1/2 — переназначить · Esc — закрыть",
+            "1/2 — переназначить · Ctrl+Backspace — сброс · Esc — закрыть",
             Style::default().fg(Color::DarkGray),
         )),
     ])
