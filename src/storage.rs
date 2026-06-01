@@ -1,5 +1,5 @@
 //! Закладки мелодий: ноты + индивидуальные задержки.
-//! Каждая мелодия — отдельный JSON-файл в `~/Documents/Piano`.
+//! Каждая мелодия — отдельный JSON-файл в `~/Documents/Pianzo`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -17,21 +17,39 @@ pub struct Bookmark {
     pub between_lines: f64,
 }
 
-/// Корневой каталог приложения: `~/Documents/Piano`
-/// (здесь лежат `config.json` и лог).
-pub fn piano_dir() -> PathBuf {
-    let mut p = dirs::document_dir().unwrap_or_else(|| {
+/// Базовый каталог документов (`~/Documents`).
+fn documents_base() -> PathBuf {
+    dirs::document_dir().unwrap_or_else(|| {
         let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         home.push("Documents");
         home
-    });
-    p.push("Piano");
+    })
+}
+
+/// Корневой каталог приложения: `~/Documents/Pianzo`
+/// (здесь лежат `config.json` и лог).
+pub fn pianzo_dir() -> PathBuf {
+    let mut p = documents_base();
+    p.push("Pianzo");
     p
 }
 
-/// Каталог с мелодиями: `~/Documents/Piano/tracks`.
+/// Разовая миграция со старого имени каталога `Piano` → `Pianzo`.
+pub fn migrate_app_root() {
+    let new = pianzo_dir();
+    if new.exists() {
+        return;
+    }
+    let mut old = documents_base();
+    old.push("Piano");
+    if old.exists() {
+        let _ = fs::rename(&old, &new);
+    }
+}
+
+/// Каталог с мелодиями: `~/Documents/Pianzo/tracks`.
 pub fn tracks_dir() -> PathBuf {
-    let mut p = piano_dir();
+    let mut p = pianzo_dir();
     p.push("tracks");
     p
 }
@@ -63,9 +81,9 @@ pub fn file_path(name: &str) -> PathBuf {
     p
 }
 
-/// Переносит мелодии из старого расположения (`Piano/*.json`) в `Piano/tracks/`.
+/// Переносит мелодии из старого расположения (`Pianzo/*.json`) в `Pianzo/tracks/`.
 fn migrate_legacy() {
-    let root = piano_dir();
+    let root = pianzo_dir();
     let legacy: Vec<PathBuf> = match fs::read_dir(&root) {
         Ok(entries) => entries
             .flatten()
@@ -100,9 +118,10 @@ fn default_bookmark() -> Bookmark {
     }
 }
 
-/// Загружает все мелодии из `Piano/tracks`. На первом запуске засеивает пример;
+/// Загружает все мелодии из `Pianzo/tracks`. На первом запуске засеивает пример;
 /// при необходимости переносит мелодии из старого расположения.
 pub fn load_bookmarks() -> Vec<Bookmark> {
+    migrate_app_root();
     let dir = tracks_dir();
     // Первый запуск, если нет ни каталога tracks, ни старых файлов в корне.
     let first_run = !dir.exists() && !has_legacy();
@@ -133,9 +152,9 @@ pub fn load_bookmarks() -> Vec<Bookmark> {
     out
 }
 
-/// Есть ли мелодии в старом расположении (`Piano/*.json`, кроме config.json).
+/// Есть ли мелодии в старом расположении (`Pianzo/*.json`, кроме config.json).
 fn has_legacy() -> bool {
-    match fs::read_dir(piano_dir()) {
+    match fs::read_dir(pianzo_dir()) {
         Ok(entries) => entries.flatten().any(|e| {
             let p = e.path();
             p.is_file()
@@ -164,7 +183,7 @@ pub fn delete_bookmark(name: &str) -> std::io::Result<()> {
 }
 
 fn config_path() -> PathBuf {
-    let mut p = piano_dir();
+    let mut p = pianzo_dir();
     p.push("config.json");
     p
 }
@@ -195,7 +214,7 @@ pub fn load_config() -> (HotkeyConfig, f32) {
 
 /// Сохраняет хоткеи и громкость.
 pub fn save_config(hotkeys: &HotkeyConfig, volume: f32) -> std::io::Result<()> {
-    let dir = piano_dir();
+    let dir = pianzo_dir();
     fs::create_dir_all(&dir)?;
     let stored = StoredConfig {
         hotkeys: *hotkeys,

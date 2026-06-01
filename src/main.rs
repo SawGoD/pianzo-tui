@@ -30,7 +30,7 @@ fn main() -> io::Result<()> {
     let stop = Arc::new(AtomicBool::new(false));
 
     let mut app = App::new();
-    debug::log("=== запуск piano-tui ===");
+    debug::log("=== запуск Pianzo ===");
 
     // Слушатель глобальной клавиатуры с общим конфигом хоткеев.
     hotkeys::spawn(hk_tx, Arc::clone(&app.hotkeys));
@@ -50,7 +50,7 @@ fn main() -> io::Result<()> {
 
     let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &amsg_rx, &audio_tx, &stop);
     ratatui::restore();
-    debug::log("=== выход piano-tui ===");
+    debug::log("=== выход Pianzo ===");
     result
 }
 

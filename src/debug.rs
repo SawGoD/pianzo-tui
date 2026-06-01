@@ -1,17 +1,17 @@
 //! Простое файловое логирование для отладки (TUI прячет stdout/stderr).
-//! Пишет в `~/Documents/Piano/piano-tui.log`.
+//! Пишет в `~/Documents/Pianzo/pianzo-tui.log`.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::storage::piano_dir;
+use crate::storage::pianzo_dir;
 
 /// Дописывает строку в лог-файл (молча игнорирует ошибки записи).
 pub fn log(msg: &str) {
-    let dir = piano_dir();
+    let dir = pianzo_dir();
     let _ = fs::create_dir_all(&dir);
-    let path = dir.join("piano-tui.log");
+    let path = dir.join("pianzo-tui.log");
 
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -65,7 +65,7 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(th).add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
-        Span::styled("piano-tui", Style::default().fg(th).add_modifier(Modifier::BOLD)),
+        Span::styled("Pianzo", Style::default().fg(th).add_modifier(Modifier::BOLD)),
         Span::raw("  ·  "),
         Span::styled("♪ заряжено: ", Style::default().fg(Color::Gray)),
         Span::styled(name.to_string(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
@@ -162,7 +162,7 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(th))
-            .title(" Параметры наведённой — [e] правка "),
+            .title(" Параметры — [e] правка "),
     );
     frame.render_widget(params, right[0]);
 
@@ -179,7 +179,7 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         app.selected_bookmark().map(|b| b.notes.as_str()).unwrap_or("")
     };
     let note_count = display_notes.split_whitespace().count();
-    let title = format!(" Ноты ({note_count}) — [e] правка наведённой ");
+    let title = format!(" Ноты ({note_count}) — [e] правка ");
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme(app)))
