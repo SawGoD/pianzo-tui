@@ -154,6 +154,7 @@ impl App {
             None => 0,
         };
         self.list_state.select(Some(i));
+        self.sync_selected();
     }
 
     pub fn select_prev(&mut self) {
@@ -165,9 +166,27 @@ impl App {
             Some(i) => i - 1,
         };
         self.list_state.select(Some(i));
+        self.sync_selected();
     }
 
-    /// Загружает закладку в рабочую область.
+    /// Делает выделенную (hovered) закладку активной рабочей мелодией.
+    /// Вызывается при навигации — так CRUD/тест/старт всегда работают по тому,
+    /// что под курсором, а не по «загруженной по Enter».
+    pub fn sync_selected(&mut self) {
+        if let Some(b) = self
+            .list_state
+            .selected()
+            .and_then(|i| self.bookmarks.get(i))
+            .cloned()
+        {
+            self.notes = b.notes;
+            self.between_keys = b.between_keys;
+            self.between_lines = b.between_lines;
+            self.current_name = Some(b.name);
+        }
+    }
+
+    /// Загружает закладку в рабочую область (с сообщением в статусе — для Enter).
     pub fn load_bookmark(&mut self, idx: usize) {
         if let Some(b) = self.bookmarks.get(idx).cloned() {
             self.notes = b.notes;
@@ -272,9 +291,12 @@ impl App {
                 self.status = format!("Удалено: {}", removed.name);
                 if self.bookmarks.is_empty() {
                     self.list_state.select(None);
+                    self.notes.clear();
+                    self.current_name = None;
                 } else {
                     self.list_state
                         .select(Some(idx.min(self.bookmarks.len() - 1)));
+                    self.sync_selected();
                 }
             }
         }
