@@ -41,11 +41,11 @@ pub struct App {
     pub bookmarks: Vec<Bookmark>,
     pub list_state: ListState,
 
-    /// Текущая (рабочая) мелодия.
+    /// «Заряженная» по Enter мелодия — её играет ГЛОБАЛЬНЫЙ старт.
     pub notes: String,
     pub between_keys: f64,
     pub between_lines: f64,
-    /// Имя загруженной закладки, если есть.
+    /// Имя заряженной (Enter) закладки, если есть.
     pub current_name: Option<String>,
 
     pub mode: Mode,
@@ -60,6 +60,8 @@ pub struct App {
     pub edit_focus: EditFocus,
     /// Если задано — создаётся новая мелодия с этим именем.
     pub creating: Option<String>,
+    /// Если задано — правится существующая закладка с этим именем (hovered).
+    pub editing: Option<String>,
     /// Редактор нот.
     pub textarea: TextArea<'static>,
 
@@ -79,6 +81,8 @@ pub struct App {
     /// Если идёт обратный отсчёт перед стартом — осталось секунд.
     pub countdown: Option<u64>,
     pub progress: (usize, usize),
+    /// Ноты мелодии, которая сейчас играет/тестируется (для караоке).
+    pub play_notes: String,
     /// Позиции токенов проигрываемой мелодии (для караоке-подсветки).
     pub spans: Vec<TokenSpan>,
     /// Индекс текущего проигрываемого события.
@@ -110,6 +114,7 @@ impl App {
             delay_field: 0,
             edit_focus: EditFocus::Notes,
             creating: None,
+            editing: None,
             textarea: TextArea::default(),
             hotkeys: Arc::new(Mutex::new(config)),
             volume: Arc::new(Mutex::new(volume)),
@@ -119,6 +124,7 @@ impl App {
             audio_playing: false,
             countdown: None,
             progress: (0, 0),
+            play_notes: String::new(),
             spans: Vec::new(),
             play_event: 0,
             should_quit: false,
@@ -154,7 +160,6 @@ impl App {
             None => 0,
         };
         self.list_state.select(Some(i));
-        self.sync_selected();
     }
 
     pub fn select_prev(&mut self) {
@@ -166,49 +171,41 @@ impl App {
             Some(i) => i - 1,
         };
         self.list_state.select(Some(i));
-        self.sync_selected();
     }
 
-    /// Делает выделенную (hovered) закладку активной рабочей мелодией.
-    /// Вызывается при навигации — так CRUD/тест/старт всегда работают по тому,
-    /// что под курсором, а не по «загруженной по Enter».
-    pub fn sync_selected(&mut self) {
-        if let Some(b) = self
-            .list_state
-            .selected()
-            .and_then(|i| self.bookmarks.get(i))
-            .cloned()
-        {
-            self.notes = b.notes;
-            self.between_keys = b.between_keys;
-            self.between_lines = b.between_lines;
-            self.current_name = Some(b.name);
-        }
+    /// Наведённая (hovered) закладка — с ней работают правка/удаление/тест.
+    pub fn selected_bookmark(&self) -> Option<&Bookmark> {
+        self.list_state.selected().and_then(|i| self.bookmarks.get(i))
     }
 
-    /// Загружает закладку в рабочую область (с сообщением в статусе — для Enter).
+    /// «Заряжает» закладку по Enter — её играет глобальный старт.
     pub fn load_bookmark(&mut self, idx: usize) {
         if let Some(b) = self.bookmarks.get(idx).cloned() {
             self.notes = b.notes;
             self.between_keys = b.between_keys;
             self.between_lines = b.between_lines;
             self.current_name = Some(b.name.clone());
-            self.status = format!("Загружено: {}", b.name);
+            self.status = format!("Заряжено (играет старт): {}", b.name);
         }
     }
 
-    /// Открывает окно правки для текущей мелодии.
+    /// Открывает окно правки для НАВЕДЁННОЙ закладки.
     pub fn begin_edit(&mut self) {
-        self.textarea = TextArea::new(self.notes.lines().map(String::from).collect());
-        self.input_keys = format!("{:.3}", self.between_keys);
-        self.input_lines = format!("{:.3}", self.between_lines);
+        let Some(b) = self.selected_bookmark().cloned() else {
+            self.status = "Нет закладки для правки.".to_string();
+            return;
+        };
+        self.textarea = TextArea::new(b.notes.lines().map(String::from).collect());
+        self.input_keys = format!("{:.3}", b.between_keys);
+        self.input_lines = format!("{:.3}", b.between_lines);
         self.delay_field = 0;
         self.edit_focus = EditFocus::Notes;
         self.creating = None;
+        self.editing = Some(b.name);
         self.mode = Mode::Edit;
     }
 
-    /// Начинает создание новой мелодии: открывает окно правки с пустыми нотами.
+    /// Начинает создание новой мелодии: окно правки с пустыми нотами.
     pub fn begin_create(&mut self, name: String) {
         let name = name.trim().to_string();
         if name.is_empty() {
@@ -216,24 +213,24 @@ impl App {
             self.mode = Mode::Normal;
             return;
         }
-        self.notes = String::new();
         self.textarea = TextArea::default();
-        self.input_keys = format!("{:.3}", self.between_keys);
-        self.input_lines = format!("{:.3}", self.between_lines);
+        self.input_keys = "0.110".to_string();
+        self.input_lines = "0.110".to_string();
         self.delay_field = 0;
         self.edit_focus = EditFocus::Notes;
         self.creating = Some(name);
+        self.editing = None;
         self.mode = Mode::Edit;
     }
 
-    /// Сохраняет правки (ноты + задержки). Если имени нет — просит ввести.
+    /// Сохраняет правки (ноты + задержки) в нужную закладку.
     pub fn commit_edit(&mut self) {
-        self.notes = self.textarea.lines().join("\n");
-        self.apply_delays_silent();
-        let name = self.creating.take().or_else(|| self.current_name.clone());
+        let notes = self.textarea.lines().join("\n");
+        let (bk, bl) = self.parse_delay_bufs();
+        let name = self.creating.take().or_else(|| self.editing.take());
         match name {
             Some(n) => {
-                self.save_current_as(n);
+                self.store_bookmark(n, notes, bk, bl);
                 self.mode = Mode::Normal;
             }
             None => {
@@ -245,12 +242,14 @@ impl App {
 
     pub fn cancel_edit(&mut self) {
         self.creating = None;
+        self.editing = None;
         self.mode = Mode::Normal;
         self.status = "Правка отменена.".to_string();
     }
 
-    /// Сохраняет текущую рабочую мелодию как закладку с именем.
-    pub fn save_current_as(&mut self, name: String) {
+    /// Сохраняет/обновляет закладку и обновляет список.
+    /// Если правится «заряженная» мелодия — обновляет и её рабочую копию.
+    fn store_bookmark(&mut self, name: String, notes: String, bk: f64, bl: f64) {
         let name = name.trim().to_string();
         if name.is_empty() {
             self.status = "Имя закладки не может быть пустым".to_string();
@@ -258,9 +257,9 @@ impl App {
         }
         let bookmark = Bookmark {
             name: name.clone(),
-            notes: self.notes.clone(),
-            between_keys: self.between_keys,
-            between_lines: self.between_lines,
+            notes: notes.clone(),
+            between_keys: bk,
+            between_lines: bl,
         };
         if let Err(e) = storage::save_bookmark(&bookmark) {
             self.status = format!("Ошибка сохранения: {e}");
@@ -271,13 +270,26 @@ impl App {
         } else {
             self.bookmarks.push(bookmark);
         }
-        self.bookmarks
-            .sort_by_key(|b| b.name.to_lowercase());
+        self.bookmarks.sort_by_key(|b| b.name.to_lowercase());
         if let Some(idx) = self.bookmarks.iter().position(|b| b.name == name) {
             self.list_state.select(Some(idx));
         }
-        self.current_name = Some(name.clone());
+        // Если это заряженная мелодия — синхронизируем рабочую копию для старта.
+        if self.current_name.as_deref() == Some(name.as_str()) {
+            self.notes = notes;
+            self.between_keys = bk;
+            self.between_lines = bl;
+        }
         self.status = format!("Сохранено в Documents/Piano: {name}");
+    }
+
+    /// Сохраняет НАВЕДЁННУЮ закладку под (новым) именем — дубликат/переименование.
+    pub fn save_hovered_as(&mut self, name: String) {
+        let Some(b) = self.selected_bookmark().cloned() else {
+            self.status = "Нет закладки для сохранения.".to_string();
+            return;
+        };
+        self.store_bookmark(name, b.notes, b.between_keys, b.between_lines);
     }
 
     pub fn delete_selected(&mut self) {
@@ -285,32 +297,33 @@ impl App {
             if idx < self.bookmarks.len() {
                 let removed = self.bookmarks.remove(idx);
                 let _ = storage::delete_bookmark(&removed.name);
+                // Если удалили заряженную — снимаем заряд.
                 if self.current_name.as_deref() == Some(removed.name.as_str()) {
                     self.current_name = None;
+                    self.notes.clear();
                 }
                 self.status = format!("Удалено: {}", removed.name);
                 if self.bookmarks.is_empty() {
                     self.list_state.select(None);
-                    self.notes.clear();
-                    self.current_name = None;
                 } else {
                     self.list_state
                         .select(Some(idx.min(self.bookmarks.len() - 1)));
-                    self.sync_selected();
                 }
             }
         }
     }
 
-    /// Парсит оба поля задержек и применяет (без сообщения об успехе).
-    fn apply_delays_silent(&mut self) {
-        let parse = |s: &str| s.trim().replace(',', ".").parse::<f64>();
-        if let (Ok(k), Ok(l)) = (parse(&self.input_keys), parse(&self.input_lines)) {
-            if k >= 0.0 && l >= 0.0 {
-                self.between_keys = k;
-                self.between_lines = l;
-            }
-        }
+    /// Парсит поля задержек (запятая → точка), при ошибке — дефолт 0.110.
+    fn parse_delay_bufs(&self) -> (f64, f64) {
+        let p = |s: &str| {
+            s.trim()
+                .replace(',', ".")
+                .parse::<f64>()
+                .ok()
+                .filter(|v| *v >= 0.0)
+                .unwrap_or(0.110)
+        };
+        (p(&self.input_keys), p(&self.input_lines))
     }
 
     /// Ссылка на буфер активного поля задержек.

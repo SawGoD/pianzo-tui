@@ -64,7 +64,8 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
         Span::raw("   "),
         Span::styled("piano-tui", Style::default().fg(th).add_modifier(Modifier::BOLD)),
         Span::raw("  ·  "),
-        Span::styled(name.to_string(), Style::default().fg(Color::Green)),
+        Span::styled("♪ заряжено: ", Style::default().fg(Color::Gray)),
+        Span::styled(name.to_string(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
     ];
     if let Some(n) = app.countdown {
         spans.push(Span::styled(
@@ -134,14 +135,19 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Length(5), Constraint::Min(3)])
         .split(cols[1]);
 
+    // Задержки — наведённой (hovered) закладки.
+    let (hk, hl) = app
+        .selected_bookmark()
+        .map(|b| (b.between_keys, b.between_lines))
+        .unwrap_or((0.0, 0.0));
     let params = Paragraph::new(vec![
         Line::from(vec![
             Span::styled("Между клавишами: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{:.3} c", app.between_keys), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{hk:.3} c"), Style::default().fg(Color::Yellow)),
         ]),
         Line::from(vec![
             Span::styled("Между строками:  ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{:.3} c", app.between_lines), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{hl:.3} c"), Style::default().fg(Color::Yellow)),
         ]),
         Line::from(vec![
             Span::styled("Громкость:       ", Style::default().fg(Color::Gray)),
@@ -153,25 +159,32 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(th))
-            .title(" Параметры — [E] задержки "),
+            .title(" Параметры наведённой — [E] правка "),
     );
     frame.render_widget(params, right[0]);
 
     draw_notes_panel(frame, app, right[1]);
 }
 
-/// Панель нот: во время игры — караоке-подсветка с прокруткой к текущей строке.
+/// Панель нот: в покое — превью НАВЕДЁННОЙ закладки; во время игры/теста —
+/// караоке-подсветка проигрываемой мелодии.
 fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
-    let note_count = app.notes.split_whitespace().count();
-    let title = format!(" Ноты ({note_count}) — [n/E] правка ");
+    let playing = (app.playing || app.audio_playing) && !app.spans.is_empty();
+    let display_notes: &str = if playing {
+        &app.play_notes
+    } else {
+        app.selected_bookmark().map(|b| b.notes.as_str()).unwrap_or("")
+    };
+    let note_count = display_notes.split_whitespace().count();
+    let title = format!(" Ноты ({note_count}) — [E] правка наведённой ");
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme(app)))
         .title(title);
 
-    if (app.playing || app.audio_playing) && !app.spans.is_empty() {
+    if playing {
         let visible = area.height.saturating_sub(2) as usize;
-        let total_lines = app.notes.split('\n').count();
+        let total_lines = app.play_notes.split('\n').count();
         let cur_line = app
             .spans
             .get(app.play_event.min(app.spans.len() - 1))
@@ -184,7 +197,7 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         let para = Paragraph::new(text).block(block).scroll((scroll, 0));
         frame.render_widget(para, area);
     } else {
-        let para = Paragraph::new(app.notes.as_str())
+        let para = Paragraph::new(display_notes)
             .block(block)
             .wrap(Wrap { trim: false });
         frame.render_widget(para, area);
@@ -196,7 +209,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
     let cur = app.play_event.min(app.spans.len() - 1);
     let cur_line = app.spans.get(cur).map(|s| s.line);
 
-    let src_lines: Vec<&str> = app.notes.split('\n').collect();
+    let src_lines: Vec<&str> = app.play_notes.split('\n').collect();
     let mut offsets = Vec::with_capacity(src_lines.len());
     let mut off = 0usize;
     for l in &src_lines {

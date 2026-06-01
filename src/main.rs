@@ -164,6 +164,11 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
     if app.playing || app.audio_playing {
         return;
     }
+    if app.current_name.is_none() {
+        app.status = "Ничего не заряжено — нажми Enter на нужной мелодии.".to_string();
+        return;
+    }
+    // Играет ЗАРЯЖЕННАЯ по Enter мелодия (рабочая копия).
     let parsed = parser::parse(&app.notes, app.between_keys, app.between_lines);
     if parsed.events.is_empty() {
         app.status = "Нет нот для воспроизведения.".to_string();
@@ -171,6 +176,7 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
     }
     stop.store(false, Ordering::Relaxed);
     app.playing = true;
+    app.play_notes = app.notes.clone();
     app.spans = parsed.spans;
     app.play_event = 0;
     app.progress = (0, parsed.events.len());
@@ -203,19 +209,25 @@ fn start_audio(app: &mut App, stop: &Arc<AtomicBool>, audio_tx: &Sender<AudioReq
     if app.playing || app.audio_playing {
         return;
     }
-    let parsed = parser::parse_pitches(&app.notes, app.between_keys, app.between_lines);
+    // Тестируется НАВЕДЁННАЯ (hovered) закладка — не трогая заряженную.
+    let Some(b) = app.selected_bookmark().cloned() else {
+        app.status = "Нет закладки для теста.".to_string();
+        return;
+    };
+    let parsed = parser::parse_pitches(&b.notes, b.between_keys, b.between_lines);
     if parsed.groups.is_empty() {
         app.status = "Нет нот для теста.".to_string();
         return;
     }
     stop.store(false, Ordering::Relaxed);
     app.audio_playing = true;
+    app.play_notes = b.notes.clone();
     app.spans = parsed.spans;
     app.play_event = 0;
-    app.status = format!("♪ Тест… (громкость {}%)", app.volume_pct());
+    app.status = format!("♪ Тест «{}» (громкость {}%)", b.name, app.volume_pct());
     debug::log(&format!(
         "main: запрос теста «{}», групп: {}",
-        app.current_name.as_deref().unwrap_or("—"),
+        b.name,
         parsed.groups.len()
     ));
     if audio_tx
@@ -328,7 +340,10 @@ fn handle_normal(
         KeyCode::Char('n') | KeyCode::Char('E') | KeyCode::Char('e') => app.begin_edit(),
         KeyCode::Char('h') | KeyCode::Char('H') => app.mode = Mode::HotkeyMenu,
         KeyCode::Char('s') => {
-            app.input = app.current_name.clone().unwrap_or_default();
+            app.input = app
+                .selected_bookmark()
+                .map(|b| b.name.clone())
+                .unwrap_or_default();
             app.mode = Mode::SaveBookmark;
         }
         KeyCode::Char('d') if app.selected().is_some() => app.mode = Mode::ConfirmDelete,
@@ -364,7 +379,7 @@ fn handle_save_input(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Enter => {
             let name = app.input.clone();
-            app.save_current_as(name);
+            app.save_hovered_as(name);
             app.mode = Mode::Normal;
         }
         KeyCode::Esc => app.mode = Mode::Normal,
