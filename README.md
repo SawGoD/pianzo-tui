@@ -37,6 +37,19 @@ TUI-автонажиматель нот на Rust. Проигрывает «ме
 cargo run --release
 ```
 
+## Релизы
+
+Готовые бинари (macOS Apple Silicon/Intel, Windows x64) собираются автоматически
+при пуше тега `vX.Y.Z` через GitHub Actions (`.github/workflows/release.yml`):
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Workflow соберёт три цели и приложит архивы к GitHub Release:
+`pianzo-tui-<target>.tar.gz` (mac) и `pianzo-tui-x86_64-pc-windows-msvc.zip`.
+
 ### Управление (главный экран)
 
 | Клавиша      | Действие                                  |
