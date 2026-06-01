@@ -197,7 +197,10 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         let para = Paragraph::new(text).block(block).scroll((scroll, 0));
         frame.render_widget(para, area);
     } else {
+        // Превью — курсивом и слегка бежевым.
+        let beige = Color::Rgb(222, 205, 165);
         let para = Paragraph::new(display_notes)
+            .style(Style::default().fg(beige).add_modifier(Modifier::ITALIC))
             .block(block)
             .wrap(Wrap { trim: false });
         frame.render_widget(para, area);
