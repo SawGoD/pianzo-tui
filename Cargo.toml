@@ -1,0 +1,18 @@
+[package]
+name = "piano-tui"
+version = "0.1.0"
+edition = "2021"
+description = "TUI-автонажиматель нот: проигрывает мелодии в активном окне, с закладками и глобальными хоткеями"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+tui-textarea = "0.7"
+enigo = "0.3"
+rdev = { version = "0.5", features = ["serialize"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+
+[profile.release]
+opt-level = 2
