@@ -511,9 +511,9 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     ];
     if delays_active {
         hint_spans.push(dim("     "));
-        hint_spans.push(key("←→"));
-        hint_spans.push(dim(" поле  "));
         hint_spans.push(key("↑↓"));
+        hint_spans.push(dim(" поле  "));
+        hint_spans.push(key("←→"));
         hint_spans.push(dim(" ±0.001"));
     }
     frame.render_widget(Paragraph::new(Line::from(hint_spans)), rows[4]);

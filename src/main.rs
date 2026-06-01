@@ -271,9 +271,9 @@ fn handle_edit(app: &mut App, key: KeyEvent, ev: Event) {
             app.textarea.input(ev);
         }
         EditFocus::Delays => match key.code {
-            KeyCode::Left | KeyCode::Right => app.delay_field ^= 1,
-            KeyCode::Up => app.nudge_delay(0.001),
-            KeyCode::Down => app.nudge_delay(-0.001),
+            KeyCode::Up | KeyCode::Down => app.delay_field ^= 1,
+            KeyCode::Right => app.nudge_delay(0.001),
+            KeyCode::Left => app.nudge_delay(-0.001),
             KeyCode::Char(c) if c.is_ascii_digit() || c == '.' || c == ',' => {
                 app.active_delay_buf().push(c);
             }
