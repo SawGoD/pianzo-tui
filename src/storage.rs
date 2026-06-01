@@ -113,8 +113,8 @@ fn default_bookmark() -> Bookmark {
     Bookmark {
         name: "Für Elise".to_string(),
         notes: include_str!("../assets/fur_elise.txt").trim_end().to_string(),
-        between_keys: 0.075,
-        between_lines: 0.09,
+        between_keys: 0.165,
+        between_lines: 0.160,
     }
 }
 
