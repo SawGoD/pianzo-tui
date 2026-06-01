@@ -337,7 +337,7 @@ fn handle_normal(
             app.input.clear();
             app.mode = Mode::AddName;
         }
-        KeyCode::Char('n') | KeyCode::Char('E') | KeyCode::Char('e') => app.begin_edit(),
+        KeyCode::Char('e') => app.begin_edit(),
         KeyCode::Char('h') | KeyCode::Char('H') => app.mode = Mode::HotkeyMenu,
         KeyCode::Char('s') => {
             app.input = app

@@ -159,7 +159,7 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(th))
-            .title(" Параметры наведённой — [E] правка "),
+            .title(" Параметры наведённой — [e] правка "),
     );
     frame.render_widget(params, right[0]);
 
@@ -176,7 +176,7 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         app.selected_bookmark().map(|b| b.notes.as_str()).unwrap_or("")
     };
     let note_count = display_notes.split_whitespace().count();
-    let title = format!(" Ноты ({note_count}) — [E] правка наведённой ");
+    let title = format!(" Ноты ({note_count}) — [e] правка наведённой ");
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme(app)))
@@ -330,7 +330,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         Span::raw(" тест  "),
         Span::styled("a", Style::default().fg(Color::Green)),
         Span::raw(" доб.  "),
-        Span::styled("E", Style::default().fg(Color::Cyan)),
+        Span::styled("e", Style::default().fg(Color::Cyan)),
         Span::raw(" правка  "),
         Span::styled("d", Style::default().fg(Color::Cyan)),
         Span::raw(" удал."),
