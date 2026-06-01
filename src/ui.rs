@@ -11,6 +11,9 @@ use ratatui::{
 use crate::app::{App, EditFocus, Mode};
 use crate::parser::TokenSpan;
 
+/// Цвет нот (превью и непроигранные в караоке) — мягкий бежевый.
+const NOTES_COLOR: Color = Color::Rgb(222, 205, 165);
+
 /// Цвет рамок интерфейса: фиолетовый в FOCUSED, белый в UNFOCUSED.
 fn theme(app: &App) -> Color {
     if app.focused {
@@ -197,10 +200,9 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         let para = Paragraph::new(text).block(block).scroll((scroll, 0));
         frame.render_widget(para, area);
     } else {
-        // Превью — курсивом и слегка бежевым.
-        let beige = Color::Rgb(222, 205, 165);
+        // Превью — бежевым.
         let para = Paragraph::new(display_notes)
-            .style(Style::default().fg(beige).add_modifier(Modifier::ITALIC))
+            .style(Style::default().fg(NOTES_COLOR))
             .block(block)
             .wrap(Wrap { trim: false });
         frame.render_widget(para, area);
@@ -225,7 +227,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
         .fg(Color::Black)
         .bg(Color::Yellow)
         .add_modifier(Modifier::BOLD);
-    let future = Style::default().fg(Color::White);
+    let future = Style::default().fg(NOTES_COLOR);
 
     // Раскладываем спаны по строкам за один проход (спаны уже идут по порядку).
     let mut buckets: Vec<Vec<(usize, &TokenSpan)>> = vec![Vec::new(); src_lines.len()];
