@@ -433,7 +433,7 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     // Имя (редактируемое).
     let name_active = app.edit_focus == EditFocus::Name;
     let name_val_style = if name_active {
-        Style::default().fg(Color::Black).bg(th).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
@@ -451,7 +451,7 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     let delays_active = app.edit_focus == EditFocus::Delays;
     let field = |label: &str, value: &str, active: bool, lead: Span<'static>| -> Line<'static> {
         let vs = if active {
-            Style::default().fg(Color::Black).bg(th).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Yellow)
         };

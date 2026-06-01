@@ -221,7 +221,7 @@ impl App {
         self.input_keys = format!("{:.3}", b.between_keys);
         self.input_lines = format!("{:.3}", b.between_lines);
         self.delay_field = 0;
-        self.edit_focus = EditFocus::Notes;
+        self.edit_focus = EditFocus::Delays;
         self.creating = None;
         self.editing = Some(b.name);
         self.mode = Mode::Edit;
