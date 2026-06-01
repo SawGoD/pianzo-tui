@@ -101,8 +101,8 @@ Workflow соберёт три цели и приложит архивы к GitH
 
 ## FOCUSED / UNFOCUSED (`u`)
 
-<video src="https://github.com/SawGoD/pianzo-tui/raw/main/media/u_focuse.mov" controls width="720">
-  Видео не воспроизводится — <a href="media/u_focuse.mov">скачать u_focuse.mov</a>.
+<video src="https://github.com/SawGoD/pianzo-tui/raw/main/media/u_focuse.mp4" controls width="720">
+  Видео не воспроизводится — <a href="media/u_focuse.mp4">скачать u_focuse.mp4</a>.
 </video>
 
 Клавиша `u` переключает реагирование на глобальный старт-хоткей:
@@ -116,8 +116,8 @@ Workflow соберёт три цели и приложит архивы к GitH
 
 ## Тест звуком (`t`)
 
-<video src="https://github.com/SawGoD/pianzo-tui/raw/main/media/t_test.mov" controls width="720">
-  Видео не воспроизводится — <a href="media/t_test.mov">скачать t_test.mov</a>.
+<video src="https://github.com/SawGoD/pianzo-tui/raw/main/media/t_test.mp4" controls width="720">
+  Видео не воспроизводится — <a href="media/t_test.mp4">скачать t_test.mp4</a>.
 </video>
 
 Токены трактуются как раскладка **Virtual Piano**: 36 «белых» клавиш в ряд
