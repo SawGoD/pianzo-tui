@@ -70,7 +70,14 @@ fn run(
 
         while let Ok(cmd) = hk_rx.try_recv() {
             match cmd {
-                HotkeyCmd::Start => start_playback(app, stop, play_tx),
+                // Старт работает только в обычном режиме — чтобы глобальный
+                // хоткей не мешал вводу в окнах правки/имени/нот/хоткеев.
+                HotkeyCmd::Start if app.mode == Mode::Normal => {
+                    start_playback(app, stop, play_tx)
+                }
+                HotkeyCmd::Start => {
+                    debug::log("main: старт проигнорирован (открыто модальное окно)");
+                }
                 HotkeyCmd::Stop => stop_playback(app, stop),
                 HotkeyCmd::ListenError(e) => {
                     app.status = format!(
