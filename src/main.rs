@@ -103,16 +103,17 @@ fn run(
         if event::poll(Duration::from_millis(50))? {
             let ev = event::read()?;
             if let Event::Key(key) = ev {
-                if app.playing {
+                if key.kind == KeyEventKind::Release {
+                    // На Windows crossterm шлёт ещё Release-события — игнорируем их,
+                    // чтобы не было двойного ввода (на macOS таких событий нет).
+                } else if app.playing {
                     // Во время воспроизведения игнорируем ввод в TUI,
                     // чтобы синтезированные клавиши не нажимали кнопки интерфейса.
                 } else if app.mode == Mode::Edit {
                     handle_edit(app, key, ev);
                 } else if matches!(app.mode, Mode::CaptureStart | Mode::CaptureStop) {
-                    if key.kind == KeyEventKind::Press {
-                        handle_capture(app, key);
-                    }
-                } else if key.kind == KeyEventKind::Press {
+                    handle_capture(app, key);
+                } else {
                     handle_key(app, key, stop, play_tx);
                 }
             }

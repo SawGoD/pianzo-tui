@@ -247,7 +247,7 @@ impl App {
             self.list_state.select(Some(idx));
         }
         self.current_name = Some(name.clone());
-        self.status = format!("Сохранено в ~/Documents/Piano: {name}");
+        self.status = format!("Сохранено в Documents/Piano: {name}");
     }
 
     pub fn delete_selected(&mut self) {
