@@ -19,10 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14 # Apple Silicon
+          - os: macos-14 # Apple Silicon (нативно)
             target: aarch64-apple-darwin
-          - os: macos-13 # Intel
-            target: x86_64-apple-darwin
+          - os: macos-14 # Intel — кросс-компиляция на arm-раннере
+            target: x86_64-apple-darwin   # дефицитные macos-13 раннеры зависают в очереди
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     steps:
