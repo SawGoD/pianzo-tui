@@ -443,15 +443,29 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                 return;
             }
             match key.code {
-                KeyCode::Char('1') => {
-                    app.mode = Mode::CaptureStart;
-                    app.status = "Нажмите новую комбинацию для СТАРТА (Esc — отмена).".to_string();
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.settings_item > 0 {
+                        app.settings_item -= 1;
+                    }
                 }
-                KeyCode::Char('2') => {
-                    app.mode = Mode::CaptureStop;
-                    app.status = "Нажмите новую комбинацию для СТОПА (Esc — отмена).".to_string();
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.settings_item < 1 {
+                        app.settings_item += 1;
+                    }
                 }
-                KeyCode::Left | KeyCode::Esc => app.settings_inside = false,
+                KeyCode::Enter | KeyCode::Right => {
+                    if app.settings_item == 0 {
+                        app.mode = Mode::CaptureStart;
+                        app.status = "Нажмите новую комбинацию для СТАРТА (Esc — отмена).".to_string();
+                    } else {
+                        app.mode = Mode::CaptureStop;
+                        app.status = "Нажмите новую комбинацию для СТОПА (Esc — отмена).".to_string();
+                    }
+                }
+                KeyCode::Left | KeyCode::Esc => {
+                    app.settings_inside = false;
+                    app.settings_item = 0;
+                }
                 _ => {}
             }
         }

@@ -571,7 +571,7 @@ fn draw_settings(frame: &mut Frame, app: &App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow))
+        .border_style(Style::default().fg(Color::Blue))
         .title(" Настройки ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -643,11 +643,11 @@ fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<L
             let cfg = *app.hotkeys.lock().unwrap();
             vec![
                 Line::from(vec![
-                    Span::styled("[1] Старт: ", Style::default().fg(Color::Gray)),
+                    Span::styled("Старт: ", Style::default().fg(Color::Gray)),
                     Span::styled(cfg.start.label(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 ]),
                 Line::from(vec![
-                    Span::styled("[2] Стоп:  ", Style::default().fg(Color::Gray)),
+                    Span::styled("Стоп:  ", Style::default().fg(Color::Gray)),
                     Span::styled(cfg.stop.label(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 ]),
             ]
@@ -692,19 +692,25 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
     match section {
         SettingsSection::Hotkeys => {
             let cfg = *app.hotkeys.lock().unwrap();
+            let item = |label: &'static str, value: String, color: Color, selected: bool| -> Line<'static> {
+                let (marker, label_style) = if selected {
+                    ("▶ ", Style::default().fg(Color::Yellow))
+                } else {
+                    ("  ", Style::default().fg(Color::Gray))
+                };
+                Line::from(vec![
+                    Span::styled(marker, Style::default().fg(Color::Yellow)),
+                    Span::styled(label, label_style),
+                    Span::styled(value, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ])
+            };
             let content = vec![
-                Line::from(vec![
-                    Span::styled("[1] Старт: ", Style::default().fg(Color::Gray)),
-                    Span::styled(cfg.start.label(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                ]),
-                Line::from(vec![
-                    Span::styled("[2] Стоп:  ", Style::default().fg(Color::Gray)),
-                    Span::styled(cfg.stop.label(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                ]),
+                item("Старт: ", cfg.start.label(), Color::Green, app.settings_item == 0),
+                item("Стоп:  ", cfg.stop.label(), Color::Red,   app.settings_item == 1),
             ];
             frame.render_widget(Paragraph::new(content), rows[2]);
             let hint = Line::from(Span::styled(
-                "1/2 переназначить   Ctrl+Backspace сброс   ←/Esc назад",
+                "↑↓ выбор   Enter/→ переназначить   Ctrl+Backspace сброс   ←/Esc назад",
                 Style::default().fg(Color::DarkGray),
             ));
             frame.render_widget(Paragraph::new(hint), rows[3]);
