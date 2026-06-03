@@ -2,6 +2,7 @@ mod app;
 mod audio;
 mod debug;
 mod hotkeys;
+mod notifications;
 mod parser;
 mod player;
 mod storage;
@@ -108,6 +109,9 @@ fn run(
                     app.playing = false;
                     app.countdown = None;
                     app.status = format!("Остановлено на позиции {at}.");
+                    if let Some(name) = &app.current_name {
+                        notifications::stopped(name);
+                    }
                 }
                 PlayerMsg::Error(e) => {
                     app.playing = false;
@@ -182,6 +186,9 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
     app.progress = (0, parsed.events.len());
     app.countdown = Some(player::COUNTDOWN_SECS);
     app.status = format!("Старт через {}…", player::COUNTDOWN_SECS);
+    if let Some(name) = &app.current_name {
+        notifications::playing(name);
+    }
 
     debug::log(&format!(
         "main: запрос воспроизведения «{}», событий: {}",
