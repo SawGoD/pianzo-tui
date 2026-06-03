@@ -571,7 +571,7 @@ fn draw_settings(frame: &mut Frame, app: &App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Blue))
+        .border_style(Style::default().fg(Color::Cyan))
         .title(" Настройки ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -597,8 +597,8 @@ fn draw_settings_list(frame: &mut Frame, app: &App, area: Rect) {
         .map(|(i, s)| {
             if i == app.settings_selected {
                 Line::from(vec![
-                    Span::styled("▶ ", Style::default().fg(Color::Yellow)),
-                    Span::styled(s.label(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled("▶ ", Style::default().fg(Color::Cyan)),
+                    Span::styled(s.label(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 ])
             } else {
                 Line::from(vec![
@@ -670,7 +670,7 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled("< ", Style::default().fg(Color::DarkGray)),
         Span::styled("На главную", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
         Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(section.label(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(section.label(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
     ]);
 
     let rows = Layout::default()
@@ -694,12 +694,12 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
             let cfg = *app.hotkeys.lock().unwrap();
             let item = |label: &'static str, value: String, color: Color, selected: bool| -> Line<'static> {
                 let (marker, label_style) = if selected {
-                    ("▶ ", Style::default().fg(Color::Yellow))
+                    ("▶ ", Style::default().fg(Color::Cyan))
                 } else {
                     ("  ", Style::default().fg(Color::Gray))
                 };
                 Line::from(vec![
-                    Span::styled(marker, Style::default().fg(Color::Yellow)),
+                    Span::styled(marker, Style::default().fg(Color::Cyan)),
                     Span::styled(label, label_style),
                     Span::styled(value, Style::default().fg(color).add_modifier(Modifier::BOLD)),
                 ])
