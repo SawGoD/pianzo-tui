@@ -109,8 +109,10 @@ fn run(
                     app.playing = false;
                     app.countdown = None;
                     app.status = format!("Остановлено на позиции {at}.");
-                    if let Some(name) = &app.current_name {
-                        notifications::stopped(name);
+                    if app.notif_config.enabled && app.notif_config.on_stopped {
+                        if let Some(name) = &app.current_name {
+                            notifications::stopped(name);
+                        }
                     }
                 }
                 PlayerMsg::Error(e) => {
@@ -186,8 +188,10 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
     app.progress = (0, parsed.events.len());
     app.countdown = Some(player::COUNTDOWN_SECS);
     app.status = format!("Старт через {}…", player::COUNTDOWN_SECS);
-    if let Some(name) = &app.current_name {
-        notifications::playing(name);
+    if app.notif_config.enabled && app.notif_config.on_playing {
+        if let Some(name) = &app.current_name {
+            notifications::playing(name);
+        }
     }
 
     debug::log(&format!(
@@ -477,8 +481,31 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
             }
         }
         SettingsSection::Notifications => {
+            let max_item = 2;
             match key.code {
-                KeyCode::Left | KeyCode::Esc => app.settings_inside = false,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.settings_item > 0 {
+                        app.settings_item -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.settings_item < max_item {
+                        app.settings_item += 1;
+                    }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    match app.settings_item {
+                        0 => app.notif_config.toggle_global(),
+                        1 if app.notif_config.enabled => app.notif_config.toggle_playing(),
+                        2 if app.notif_config.enabled => app.notif_config.toggle_stopped(),
+                        _ => {}
+                    }
+                    let _ = app.persist_config_pub();
+                }
+                KeyCode::Left | KeyCode::Esc => {
+                    app.settings_inside = false;
+                    app.settings_item = 0;
+                }
                 _ => {}
             }
         }

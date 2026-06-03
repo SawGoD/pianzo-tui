@@ -653,10 +653,22 @@ fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<L
             ]
         }
         SettingsSection::Notifications => {
-            vec![Line::from(Span::styled(
-                "(пока пусто)",
-                Style::default().fg(Color::DarkGray),
-            ))]
+            let nc = app.notif_config;
+            let val = |on: bool| if on { "вкл" } else { "выкл" };
+            vec![
+                Line::from(vec![
+                    Span::styled("Глобально:     ", Style::default().fg(Color::Gray)),
+                    Span::styled(val(nc.enabled), Style::default().fg(if nc.enabled { Color::Cyan } else { Color::DarkGray })),
+                ]),
+                Line::from(vec![
+                    Span::styled("Сейчас играет: ", Style::default().fg(Color::Gray)),
+                    Span::styled(val(nc.on_playing), Style::default().fg(if nc.on_playing { Color::Cyan } else { Color::DarkGray })),
+                ]),
+                Line::from(vec![
+                    Span::styled("Остановлено:   ", Style::default().fg(Color::Gray)),
+                    Span::styled(val(nc.on_stopped), Style::default().fg(if nc.on_stopped { Color::Cyan } else { Color::DarkGray })),
+                ]),
+            ]
         }
     }
 }
@@ -716,12 +728,39 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
             frame.render_widget(Paragraph::new(hint), rows[3]);
         }
         SettingsSection::Notifications => {
-            frame.render_widget(
-                Paragraph::new(Span::styled("(пока пусто)", Style::default().fg(Color::DarkGray))),
-                rows[2],
-            );
+            let nc = app.notif_config;
+            let toggle = |on: bool| -> Span<'static> {
+                if on {
+                    Span::styled(" ВКЛ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+                } else {
+                    Span::styled(" ВЫКЛ", Style::default().fg(Color::DarkGray).bg(Color::Reset))
+                }
+            };
+            let row = |label: &'static str, on: bool, selected: bool, active: bool| -> Line<'static> {
+                let marker = if selected {
+                    Span::styled("▶ ", Style::default().fg(Color::Cyan))
+                } else {
+                    Span::raw("  ")
+                };
+                let label_style = if !active {
+                    Style::default().fg(Color::DarkGray)
+                } else if selected {
+                    Style::default().fg(Color::Cyan)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::from(vec![marker, Span::styled(label, label_style), Span::raw("  "), toggle(on)])
+            };
+
+            let content = vec![
+                row("Уведомления",      nc.enabled,    app.settings_item == 0, true),
+                row("Сейчас играет",    nc.on_playing, app.settings_item == 1, nc.enabled),
+                row("Остановлено",      nc.on_stopped, app.settings_item == 2, nc.enabled),
+            ];
+            frame.render_widget(Paragraph::new(content), rows[2]);
+
             let hint = Line::from(Span::styled(
-                "←/Esc назад",
+                "↑↓ выбор   Enter/Пробел переключить   ←/Esc назад",
                 Style::default().fg(Color::DarkGray),
             ));
             frame.render_widget(Paragraph::new(hint), rows[3]);
