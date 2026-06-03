@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use app::{App, EditFocus, Mode};
+use app::{App, EditFocus, Mode, SettingsSection};
 use audio::{AudioMsg, AudioRequest};
 use hotkeys::HotkeyCmd;
 use parser::Event as NoteEvent;
@@ -289,7 +289,7 @@ fn handle_edit(app: &mut App, key: KeyEvent, ev: Event) {
 
 fn handle_capture(app: &mut App, key: KeyEvent) {
     if key.code == KeyCode::Esc {
-        app.mode = Mode::HotkeyMenu;
+        app.mode = Mode::Settings;
         app.status = "Перепривязка отменена.".to_string();
         return;
     }
@@ -297,7 +297,7 @@ fn handle_capture(app: &mut App, key: KeyEvent) {
         Some(spec) => {
             let start = app.mode == Mode::CaptureStart;
             app.set_hotkey(start, spec);
-            app.mode = Mode::HotkeyMenu;
+            app.mode = Mode::Settings;
         }
         None => {
             app.status = "Эту клавишу нельзя назначить.".to_string();
@@ -319,8 +319,8 @@ fn handle_key(
         Mode::AddName => handle_add_name(app, key),
         Mode::SaveBookmark => handle_save_input(app, key),
         Mode::ConfirmDelete => handle_confirm_delete(app, key),
-        Mode::HotkeyMenu => handle_hotkey_menu(app, key),
-        Mode::Edit | Mode::CaptureStart | Mode::CaptureStop => {} // обрабатываются отдельно
+        Mode::Settings => handle_settings(app, key),
+        Mode::Edit | Mode::CaptureStart | Mode::CaptureStop => {}  // обрабатываются отдельно
     }
 }
 
@@ -345,8 +345,12 @@ fn handle_normal(
             app.mode = Mode::AddName;
         }
         KeyCode::Char('e') => app.begin_edit(),
-        KeyCode::Char('h') | KeyCode::Char('H') => app.mode = Mode::HotkeyMenu,
         KeyCode::Char('s') => {
+            app.settings_selected = 0;
+            app.settings_inside = false;
+            app.mode = Mode::Settings;
+        }
+        KeyCode::Char('S') => {
             app.input = app
                 .selected_bookmark()
                 .map(|b| b.name.clone())
@@ -405,21 +409,57 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_hotkey_menu(app: &mut App, key: KeyEvent) {
-    if key.code == KeyCode::Backspace && key.modifiers.contains(KeyModifiers::CONTROL) {
-        app.reset_hotkeys();
+fn handle_settings(app: &mut App, key: KeyEvent) {
+    let sections = SettingsSection::all();
+
+    if !app.settings_inside {
+        // Список разделов — навигация вверх/вниз, вправо/Enter — войти, Esc — закрыть.
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if app.settings_selected > 0 {
+                    app.settings_selected -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if app.settings_selected + 1 < sections.len() {
+                    app.settings_selected += 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Enter => {
+                app.settings_inside = true;
+            }
+            KeyCode::Esc => app.mode = Mode::Normal,
+            _ => {}
+        }
         return;
     }
-    match key.code {
-        KeyCode::Char('1') => {
-            app.mode = Mode::CaptureStart;
-            app.status = "Нажмите новую комбинацию для СТАРТА (Esc — отмена).".to_string();
+
+    // Внутри раздела.
+    let section = sections[app.settings_selected];
+    match section {
+        SettingsSection::Hotkeys => {
+            if key.code == KeyCode::Backspace && key.modifiers.contains(KeyModifiers::CONTROL) {
+                app.reset_hotkeys();
+                return;
+            }
+            match key.code {
+                KeyCode::Char('1') => {
+                    app.mode = Mode::CaptureStart;
+                    app.status = "Нажмите новую комбинацию для СТАРТА (Esc — отмена).".to_string();
+                }
+                KeyCode::Char('2') => {
+                    app.mode = Mode::CaptureStop;
+                    app.status = "Нажмите новую комбинацию для СТОПА (Esc — отмена).".to_string();
+                }
+                KeyCode::Left | KeyCode::Esc => app.settings_inside = false,
+                _ => {}
+            }
         }
-        KeyCode::Char('2') => {
-            app.mode = Mode::CaptureStop;
-            app.status = "Нажмите новую комбинацию для СТОПА (Esc — отмена).".to_string();
+        SettingsSection::Notifications => {
+            match key.code {
+                KeyCode::Left | KeyCode::Esc => app.settings_inside = false,
+                _ => {}
+            }
         }
-        KeyCode::Esc | KeyCode::Char('q') => app.mode = Mode::Normal,
-        _ => {}
     }
 }

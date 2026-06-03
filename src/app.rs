@@ -22,12 +22,32 @@ pub enum Mode {
     SaveBookmark,
     /// Подтверждение удаления закладки.
     ConfirmDelete,
-    /// Меню настройки хоткеев.
-    HotkeyMenu,
+    /// Меню настроек (двухколоночный попап).
+    Settings,
     /// Захват новой комбинации для старта.
     CaptureStart,
     /// Захват новой комбинации для стопа.
     CaptureStop,
+}
+
+/// Разделы в меню настроек.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SettingsSection {
+    Hotkeys,
+    Notifications,
+}
+
+impl SettingsSection {
+    pub fn all() -> &'static [SettingsSection] {
+        &[SettingsSection::Hotkeys, SettingsSection::Notifications]
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SettingsSection::Hotkeys => "Хоткеи",
+            SettingsSection::Notifications => "Уведомления",
+        }
+    }
 }
 
 /// Фокус внутри окна правки.
@@ -86,6 +106,10 @@ pub struct App {
     /// Редактор нот.
     pub textarea: TextArea<'static>,
 
+    /// Состояние меню настроек: выбранный раздел и признак «внутри раздела».
+    pub settings_selected: usize,
+    pub settings_inside: bool,
+
     /// Конфиг хоткеев (общий со слушателем).
     pub hotkeys: Arc<Mutex<HotkeyConfig>>,
     /// Громкость звука 0.0–1.0 (общая с аудио-потоком).
@@ -137,6 +161,8 @@ impl App {
             creating: None,
             editing: None,
             textarea: TextArea::default(),
+            settings_selected: 0,
+            settings_inside: false,
             hotkeys: Arc::new(Mutex::new(config)),
             volume: Arc::new(Mutex::new(volume)),
             focused: true,
