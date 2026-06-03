@@ -657,7 +657,7 @@ fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<L
             let val = |on: bool| if on { "вкл" } else { "выкл" };
             vec![
                 Line::from(vec![
-                    Span::styled("Глобально:     ", Style::default().fg(Color::Gray)),
+                    Span::styled("Разрешить уведомления: ", Style::default().fg(Color::Gray)),
                     Span::styled(val(nc.enabled), Style::default().fg(if nc.enabled { Color::Cyan } else { Color::DarkGray })),
                 ]),
                 Line::from(vec![
@@ -733,14 +733,25 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 if on {
                     Span::styled(" ВКЛ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
                 } else {
-                    Span::styled(" ВЫКЛ", Style::default().fg(Color::DarkGray).bg(Color::Reset))
+                    Span::styled(" ВЫКЛ", Style::default().fg(Color::DarkGray))
                 }
             };
-            let row = |label: &'static str, on: bool, selected: bool, active: bool| -> Line<'static> {
-                let marker = if selected {
-                    Span::styled("▶ ", Style::default().fg(Color::Cyan))
+            let sel = app.settings_item;
+
+            // Глобальный переключатель.
+            let global_marker = if sel == 0 { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+            let global_label = Span::styled("Разрешить уведомления", if sel == 0 { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) });
+
+            // Дочерние пункты — отступ + · префикс.
+            let child = |label: &'static str, on: bool, idx: usize| -> Line<'static> {
+                let selected = sel == idx;
+                let active = nc.enabled;
+                let prefix_style = if active && selected {
+                    Style::default().fg(Color::Cyan)
+                } else if active {
+                    Style::default().fg(Color::DarkGray)
                 } else {
-                    Span::raw("  ")
+                    Style::default().fg(Color::DarkGray)
                 };
                 let label_style = if !active {
                     Style::default().fg(Color::DarkGray)
@@ -749,13 +760,19 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                Line::from(vec![marker, Span::styled(label, label_style), Span::raw("  "), toggle(on)])
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(if selected { "▶ · " } else { "  · " }, prefix_style),
+                    Span::styled(label, label_style),
+                    Span::raw("  "),
+                    toggle(on && active),
+                ])
             };
 
             let content = vec![
-                row("Уведомления",      nc.enabled,    app.settings_item == 0, true),
-                row("Сейчас играет",    nc.on_playing, app.settings_item == 1, nc.enabled),
-                row("Остановлено",      nc.on_stopped, app.settings_item == 2, nc.enabled),
+                Line::from(vec![global_marker, global_label, Span::raw("  "), toggle(nc.enabled)]),
+                child("Сейчас играет", nc.on_playing, 1),
+                child("Остановлено",   nc.on_stopped, 2),
             ];
             frame.render_widget(Paragraph::new(content), rows[2]);
 
