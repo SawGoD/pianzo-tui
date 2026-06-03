@@ -1,4 +1,3 @@
-use notify_rust::Notification;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -15,8 +14,6 @@ impl Default for NotificationConfig {
 }
 
 impl NotificationConfig {
-    /// Включить/выключить глобальный тумблер.
-    /// OFF → все гасятся. ON (из полностью выключенного состояния) → все включаются.
     pub fn toggle_global(&mut self) {
         if self.enabled {
             self.enabled = false;
@@ -47,15 +44,27 @@ impl NotificationConfig {
 }
 
 pub fn playing(name: &str) {
-    let _ = Notification::new()
-        .summary("Сейчас играет")
-        .body(name)
-        .show();
+    send("Сейчас играет", name);
 }
 
 pub fn stopped(name: &str) {
-    let _ = Notification::new()
-        .summary("Остановлено")
-        .body(name)
-        .show();
+    send("Остановлено", name);
+}
+
+#[cfg(target_os = "macos")]
+fn send(title: &str, body: &str) {
+    let script = format!(
+        "display notification \"{}\" with title \"{}\"",
+        body.replace('"', "\\\""),
+        title.replace('"', "\\\""),
+    );
+    let _ = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .spawn();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn send(title: &str, body: &str) {
+    use notify_rust::Notification;
+    let _ = Notification::new().summary(title).body(body).show();
 }
