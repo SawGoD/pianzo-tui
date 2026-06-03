@@ -73,7 +73,7 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(n) = app.countdown {
         spans.push(Span::styled(
             format!("   ⏳ {n}"),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ));
     } else if app.playing {
         let (done, total) = app.progress;
@@ -146,11 +146,11 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
     let params = Paragraph::new(vec![
         Line::from(vec![
             Span::styled("Между клавишами: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{hk:.3} c"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{hk:.3} c"), Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
             Span::styled("Между строками:  ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{hl:.3} c"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{hl:.3} c"), Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
             Span::styled("Громкость:       ", Style::default().fg(Color::Gray)),
@@ -225,7 +225,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
     let played = Style::default().fg(Color::DarkGray);
     let current = Style::default()
         .fg(Color::Black)
-        .bg(Color::Yellow)
+        .bg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
     let future = Style::default().fg(NOTES_COLOR);
 
@@ -277,7 +277,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let (text, color) = if let Some(n) = app.countdown {
-        (format!("⏳ Старт через {n}…  (переключитесь в нужное окно)"), Color::Yellow)
+        (format!("⏳ Старт через {n}…  (переключитесь в нужное окно)"), Color::Cyan)
     } else if app.playing {
         let (done, total) = app.progress;
         (format!("▶ ВОСПРОИЗВЕДЕНИЕ  {done}/{total}"), Color::Green)
@@ -345,9 +345,9 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let right = Line::from(vec![
         Span::styled("+/-", Style::default().fg(Color::Magenta)),
         Span::raw(" громк.  "),
-        Span::styled("u", Style::default().fg(Color::Yellow)),
+        Span::styled("u", Style::default().fg(Color::Cyan)),
         Span::raw(" фокус  "),
-        Span::styled("s", Style::default().fg(Color::Yellow)),
+        Span::styled("s", Style::default().fg(Color::Cyan)),
         Span::raw(" настройки  "),
         Span::styled("q", Style::default().fg(Color::Magenta)),
         Span::raw(" выход"),
@@ -375,12 +375,12 @@ fn draw_name_modal(frame: &mut Frame, app: &App, title: &str) {
     frame.render_widget(Clear, area);
     let para = Paragraph::new(Line::from(vec![
         Span::raw(app.input.as_str()),
-        Span::styled("▏", Style::default().fg(Color::Yellow)),
+        Span::styled("▏", Style::default().fg(Color::Cyan)),
     ]))
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(Color::Cyan))
             .title(format!(" {title} ")),
     );
     frame.render_widget(para, area);
@@ -433,7 +433,7 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     // Имя (редактируемое).
     let name_active = app.edit_focus == EditFocus::Name;
     let name_val_style = if name_active {
-        Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
@@ -451,9 +451,9 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     let delays_active = app.edit_focus == EditFocus::Delays;
     let field = |label: &str, value: &str, active: bool, lead: Span<'static>| -> Line<'static> {
         let vs = if active {
-            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(Color::Cyan)
         };
         Line::from(vec![
             lead,
@@ -740,7 +740,7 @@ fn draw_capture(frame: &mut Frame, target: &str) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(Color::Cyan))
             .title(" Перепривязка "),
     );
     frame.render_widget(para, area);
