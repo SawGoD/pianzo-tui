@@ -111,10 +111,11 @@ pub struct App {
     pub textarea: TextArea<'static>,
 
     /// Состояние меню настроек: выбранный раздел, признак «внутри раздела»,
-    /// и выбранный пункт внутри раздела.
+    /// выбранный пункт и признак редактирования значения.
     pub settings_selected: usize,
     pub settings_inside: bool,
     pub settings_item: usize,
+    pub settings_editing: bool,
 
     /// Конфиг хоткеев (общий со слушателем).
     pub hotkeys: Arc<Mutex<HotkeyConfig>>,
@@ -174,6 +175,7 @@ impl App {
             settings_selected: 0,
             settings_inside: false,
             settings_item: 0,
+            settings_editing: false,
             hotkeys: Arc::new(Mutex::new(config)),
             notif_config,
             general,

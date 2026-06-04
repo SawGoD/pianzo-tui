@@ -458,36 +458,50 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
     let section = sections[app.settings_selected];
     match section {
         SettingsSection::General => {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if app.settings_item > 0 { app.settings_item -= 1; }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if app.settings_item < 2 { app.settings_item += 1; }
-                }
-                KeyCode::Left => {
-                    match app.settings_item {
-                        0 => app.general.nudge_keys(-0.001),
-                        1 => app.general.nudge_lines(-0.001),
-                        2 => app.general.nudge_countdown(-1),
-                        _ => {}
+            if app.settings_editing {
+                // Режим редактирования значения.
+                match key.code {
+                    KeyCode::Left => {
+                        match app.settings_item {
+                            0 => app.general.nudge_keys(-0.001),
+                            1 => app.general.nudge_lines(-0.001),
+                            2 => app.general.nudge_countdown(-1),
+                            _ => {}
+                        }
+                        let _ = app.persist_config_pub();
                     }
-                    let _ = app.persist_config_pub();
-                }
-                KeyCode::Right => {
-                    match app.settings_item {
-                        0 => app.general.nudge_keys(0.001),
-                        1 => app.general.nudge_lines(0.001),
-                        2 => app.general.nudge_countdown(1),
-                        _ => {}
+                    KeyCode::Right => {
+                        match app.settings_item {
+                            0 => app.general.nudge_keys(0.001),
+                            1 => app.general.nudge_lines(0.001),
+                            2 => app.general.nudge_countdown(1),
+                            _ => {}
+                        }
+                        let _ = app.persist_config_pub();
                     }
-                    let _ = app.persist_config_pub();
+                    KeyCode::Enter | KeyCode::Esc => {
+                        app.settings_editing = false;
+                    }
+                    _ => {}
                 }
-                KeyCode::Esc => {
-                    app.settings_inside = false;
-                    app.settings_item = 0;
+            } else {
+                // Навигация по пунктам.
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if app.settings_item > 0 { app.settings_item -= 1; }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if app.settings_item < 2 { app.settings_item += 1; }
+                    }
+                    KeyCode::Enter | KeyCode::Right => {
+                        app.settings_editing = true;
+                    }
+                    KeyCode::Left | KeyCode::Esc => {
+                        app.settings_inside = false;
+                        app.settings_item = 0;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
         SettingsSection::Hotkeys => {
@@ -518,6 +532,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                 KeyCode::Left | KeyCode::Esc => {
                     app.settings_inside = false;
                     app.settings_item = 0;
+                    app.settings_editing = false;
                 }
                 _ => {}
             }
@@ -549,6 +564,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                 KeyCode::Left | KeyCode::Esc => {
                     app.settings_inside = false;
                     app.settings_item = 0;
+                    app.settings_editing = false;
                 }
                 _ => {}
             }

@@ -734,31 +734,55 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
         SettingsSection::General => {
             let g = app.general;
             let sel = app.settings_item;
-            let row = |label: &'static str, value: String, idx: usize| -> Line<'static> {
+            let editing = app.settings_editing;
+
+            // Метка child+marker = 2+4+label, метка top = 2+label.
+            // Самая длинная строка: "Пауза перед воспроизведением" = 28 → с маркером 30.
+            // child label pad = 30 - 2 - 4 = 24, top label pad = 30 - 2 = 28.
+            const C_PAD: usize = 24;
+            const T_PAD: usize = 28;
+
+            let value_style = |idx: usize| -> Style {
+                if sel == idx && editing {
+                    Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                }
+            };
+            let child_row = |label: &'static str, value: String, idx: usize| -> Line<'static> {
                 let selected = sel == idx;
                 let marker = if selected { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
                 let label_style = if selected { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
-                let pad = 30usize.saturating_sub(label.len());
                 Line::from(vec![
                     marker,
-                    Span::styled(label, label_style),
-                    Span::raw(" ".repeat(pad)),
-                    Span::styled(value, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("  · {:<C_PAD$}", label), label_style),
+                    Span::styled(value, value_style(idx)),
                 ])
             };
+            let top_row = |label: &'static str, value: String, idx: usize| -> Line<'static> {
+                let selected = sel == idx;
+                let marker = if selected { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+                let label_style = if selected { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
+                Line::from(vec![
+                    marker,
+                    Span::styled(format!("{:<T_PAD$}", label), label_style),
+                    Span::styled(value, value_style(idx)),
+                ])
+            };
+
             let content = vec![
-                Line::from(Span::styled("Задержка по умолчанию", Style::default().fg(Color::DarkGray))),
-                row("  · Между клавишами", format!("{:.3} с", g.default_keys),  0),
-                row("  · Между строками",  format!("{:.3} с", g.default_lines), 1),
+                Line::from(Span::styled("  Задержка по умолчанию", Style::default().fg(Color::DarkGray))),
+                child_row("Между клавишами", format!("{:.3} с", g.default_keys),  0),
+                child_row("Между строками",  format!("{:.3} с", g.default_lines), 1),
                 Line::from(""),
-                row("Пауза перед воспроизведением", format!("{} сек", g.countdown_secs), 2),
+                top_row("Пауза перед воспроизведением", format!("{} сек", g.countdown_secs), 2),
             ];
             frame.render_widget(Paragraph::new(content), cols[0]);
 
             let desc_text = match sel {
-                0 => "Задержка между нажатиями клавиш при создании новой мелодии.\n←/→ изменить на 0.001 с",
-                1 => "Задержка между строками нот при создании новой мелодии.\n←/→ изменить на 0.001 с",
-                2 => "Через сколько секунд начнётся воспроизведение после нажатия хоткея.\n←/→ изменить на 1 сек",
+                0 => "Задержка между нажатиями клавиш при создании новой мелодии.",
+                1 => "Задержка между строками нот при создании новой мелодии.",
+                2 => "Через сколько секунд начнётся воспроизведение после нажатия хоткея.",
                 _ => "",
             };
             frame.render_widget(
@@ -768,10 +792,17 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 desc_inner,
             );
 
-            let hint = Line::from(Span::styled(
-                "↑↓ выбор   ←/→ изменить   Esc назад",
-                Style::default().fg(Color::DarkGray),
-            ));
+            let hint = if editing {
+                Line::from(Span::styled(
+                    "←/→ изменить   Enter/Esc подтвердить",
+                    Style::default().fg(Color::Cyan),
+                ))
+            } else {
+                Line::from(Span::styled(
+                    "↑↓ выбор   Enter/→ изменить   ←/Esc назад",
+                    Style::default().fg(Color::DarkGray),
+                ))
+            };
             frame.render_widget(Paragraph::new(hint), rows[3]);
         }
         SettingsSection::Hotkeys => {
