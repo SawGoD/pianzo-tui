@@ -655,27 +655,19 @@ fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<L
         SettingsSection::Notifications => {
             let nc = app.notif_config;
             let val = |on: bool| if on { "вкл" } else { "выкл" };
+            // Одинаковые названия с разделом — паддинг до 28 символов для выравнивания.
+            let row = |label: &'static str, on: bool, color: Color| -> Line<'static> {
+                Line::from(vec![
+                    Span::styled(format!("{:<28}", format!("{}:", label)), Style::default().fg(Color::Gray)),
+                    Span::styled(val(on), Style::default().fg(color)),
+                ])
+            };
             vec![
-                Line::from(vec![
-                    Span::styled("Разрешить уведомления: ", Style::default().fg(Color::Gray)),
-                    Span::styled(val(nc.enabled), Style::default().fg(if nc.enabled { Color::Cyan } else { Color::DarkGray })),
-                ]),
-                Line::from(vec![
-                    Span::styled("Сейчас играет: ", Style::default().fg(Color::Gray)),
-                    Span::styled(val(nc.on_playing), Style::default().fg(if nc.on_playing { Color::Cyan } else { Color::DarkGray })),
-                ]),
-                Line::from(vec![
-                    Span::styled("Остановлено:   ", Style::default().fg(Color::Gray)),
-                    Span::styled(val(nc.on_stopped), Style::default().fg(if nc.on_stopped { Color::Cyan } else { Color::DarkGray })),
-                ]),
-                Line::from(vec![
-                    Span::styled("Завершено:     ", Style::default().fg(Color::Gray)),
-                    Span::styled(val(nc.on_finished), Style::default().fg(if nc.on_finished { Color::Cyan } else { Color::DarkGray })),
-                ]),
-                Line::from(vec![
-                    Span::styled("Ошибка доступа:", Style::default().fg(Color::Gray)),
-                    Span::styled(val(nc.on_error), Style::default().fg(if nc.on_error { Color::Cyan } else { Color::DarkGray })),
-                ]),
+                row("Разрешить уведомления",       nc.enabled,    if nc.enabled    { Color::Cyan } else { Color::DarkGray }),
+                row("Сейчас играет",               nc.on_playing, if nc.on_playing { Color::Cyan } else { Color::DarkGray }),
+                row("Остановлено",                 nc.on_stopped, if nc.on_stopped { Color::Cyan } else { Color::DarkGray }),
+                row("Воспроизведение завершено",   nc.on_finished,if nc.on_finished{ Color::Cyan } else { Color::DarkGray }),
+                row("Ошибка доступа",              nc.on_error,   if nc.on_error   { Color::Cyan } else { Color::DarkGray }),
             ]
         }
     }
@@ -746,39 +738,30 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
             };
             let sel = app.settings_item;
 
-            // Глобальный переключатель.
-            let global_marker = if sel == 0 { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
-            let global_label = Span::styled("Разрешить уведомления", if sel == 0 { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) });
+            // Префикс global=2, child=6 → toggle на колонке 33.
+            // global label pad = 33 - 2 - 2 = 29, child label pad = 33 - 6 - 2 = 25.
+            const G_PAD: usize = 29;
+            const C_PAD: usize = 25;
 
-            // Дочерние пункты — отступ + · префикс.
-            let child = |label: &'static str, on: bool, idx: usize| -> Line<'static> {
+            let global_marker = if sel == 0 { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+            let global_label_style = if sel == 0 { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
+            let global_label = Span::styled(format!("{:<G_PAD$}", "Разрешить уведомления"), global_label_style);
+
+            let child = |label: &str, on: bool, idx: usize| -> Line<'_> {
                 let selected = sel == idx;
                 let active = nc.enabled;
-                let prefix_style = if active && selected {
-                    Style::default().fg(Color::Cyan)
-                } else if active {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default().fg(Color::DarkGray)
-                };
-                let label_style = if !active {
-                    Style::default().fg(Color::DarkGray)
-                } else if selected {
-                    Style::default().fg(Color::Cyan)
-                } else {
-                    Style::default().fg(Color::White)
-                };
+                let prefix_style = if selected && active { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::DarkGray) };
+                let label_style = if !active { Style::default().fg(Color::DarkGray) } else if selected { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
                 Line::from(vec![
                     Span::raw("  "),
                     Span::styled(if selected { "▶ · " } else { "  · " }, prefix_style),
-                    Span::styled(label, label_style),
-                    Span::raw("  "),
+                    Span::styled(format!("{:<C_PAD$}", label), label_style),
                     toggle(on && active),
                 ])
             };
 
             let content = vec![
-                Line::from(vec![global_marker, global_label, Span::raw("  "), toggle(nc.enabled)]),
+                Line::from(vec![global_marker, global_label, toggle(nc.enabled)]),
                 child("Сейчас играет",            nc.on_playing,  1),
                 child("Остановлено",              nc.on_stopped,  2),
                 child("Воспроизведение завершено", nc.on_finished, 3),
