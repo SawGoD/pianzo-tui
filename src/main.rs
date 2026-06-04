@@ -1,6 +1,7 @@
 mod app;
 mod audio;
 mod debug;
+mod general;
 mod hotkeys;
 mod notifications;
 mod parser;
@@ -19,13 +20,12 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use app::{App, EditFocus, Mode, SettingsSection};
 use audio::{AudioMsg, AudioRequest};
 use hotkeys::HotkeyCmd;
-use parser::Event as NoteEvent;
-use player::PlayerMsg;
+use player::{PlayRequest, PlayerMsg};
 
 fn main() -> io::Result<()> {
     let (hk_tx, hk_rx) = mpsc::channel::<HotkeyCmd>();
     let (pl_tx, pl_rx) = mpsc::channel::<PlayerMsg>();
-    let (play_tx, play_rx) = mpsc::channel::<Vec<NoteEvent>>();
+    let (play_tx, play_rx) = mpsc::channel::<PlayRequest>();
     let (audio_tx, audio_rx) = mpsc::channel::<AudioRequest>();
     let (amsg_tx, amsg_rx) = mpsc::channel::<AudioMsg>();
     let stop = Arc::new(AtomicBool::new(false));
@@ -61,7 +61,7 @@ fn run(
     app: &mut App,
     hk_rx: &Receiver<HotkeyCmd>,
     pl_rx: &Receiver<PlayerMsg>,
-    play_tx: &Sender<Vec<NoteEvent>>,
+    play_tx: &Sender<PlayRequest>,
     amsg_rx: &Receiver<AudioMsg>,
     audio_tx: &Sender<AudioRequest>,
     stop: &Arc<AtomicBool>,
@@ -174,7 +174,7 @@ fn run(
     }
 }
 
-fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<NoteEvent>>) {
+fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<PlayRequest>) {
     if app.playing || app.audio_playing {
         return;
     }
@@ -194,8 +194,9 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
     app.spans = parsed.spans;
     app.play_event = 0;
     app.progress = (0, parsed.events.len());
-    app.countdown = Some(player::COUNTDOWN_SECS);
-    app.status = format!("Старт через {}…", player::COUNTDOWN_SECS);
+    let countdown = app.general.countdown_secs;
+    app.countdown = Some(countdown);
+    app.status = format!("Старт через {}…", countdown);
     if app.notif_config.enabled && app.notif_config.on_playing {
         if let Some(name) = &app.current_name {
             notifications::playing(name);
@@ -208,7 +209,7 @@ fn start_playback(app: &mut App, stop: &Arc<AtomicBool>, play_tx: &Sender<Vec<No
         parsed.events.len()
     ));
 
-    if play_tx.send(parsed.events).is_err() {
+    if play_tx.send(PlayRequest { events: parsed.events, countdown_secs: countdown }).is_err() {
         app.playing = false;
         app.countdown = None;
         app.status = "Поток воспроизведения недоступен.".to_string();
@@ -330,7 +331,7 @@ fn handle_key(
     app: &mut App,
     key: KeyEvent,
     stop: &Arc<AtomicBool>,
-    play_tx: &Sender<Vec<NoteEvent>>,
+    play_tx: &Sender<PlayRequest>,
     audio_tx: &Sender<AudioRequest>,
 ) {
     match app.mode {
@@ -347,7 +348,7 @@ fn handle_normal(
     app: &mut App,
     key: KeyEvent,
     stop: &Arc<AtomicBool>,
-    play_tx: &Sender<Vec<NoteEvent>>,
+    play_tx: &Sender<PlayRequest>,
     audio_tx: &Sender<AudioRequest>,
 ) {
     match key.code {
@@ -456,6 +457,39 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
     // Внутри раздела.
     let section = sections[app.settings_selected];
     match section {
+        SettingsSection::General => {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.settings_item > 0 { app.settings_item -= 1; }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.settings_item < 2 { app.settings_item += 1; }
+                }
+                KeyCode::Left => {
+                    match app.settings_item {
+                        0 => app.general.nudge_keys(-0.001),
+                        1 => app.general.nudge_lines(-0.001),
+                        2 => app.general.nudge_countdown(-1),
+                        _ => {}
+                    }
+                    let _ = app.persist_config_pub();
+                }
+                KeyCode::Right => {
+                    match app.settings_item {
+                        0 => app.general.nudge_keys(0.001),
+                        1 => app.general.nudge_lines(0.001),
+                        2 => app.general.nudge_countdown(1),
+                        _ => {}
+                    }
+                    let _ = app.persist_config_pub();
+                }
+                KeyCode::Esc => {
+                    app.settings_inside = false;
+                    app.settings_item = 0;
+                }
+                _ => {}
+            }
+        }
         SettingsSection::Hotkeys => {
             if key.code == KeyCode::Backspace && key.modifiers.contains(KeyModifiers::CONTROL) {
                 app.reset_hotkeys();

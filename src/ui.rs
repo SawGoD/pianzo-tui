@@ -639,6 +639,23 @@ fn draw_settings_list(frame: &mut Frame, app: &App, area: Rect) {
 
 fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<Line<'a>> {
     match section {
+        SettingsSection::General => {
+            let g = app.general;
+            vec![
+                Line::from(vec![
+                    Span::styled("Клавиши:  ", Style::default().fg(Color::Gray)),
+                    Span::styled(format!("{:.3} с", g.default_keys), Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Строки:   ", Style::default().fg(Color::Gray)),
+                    Span::styled(format!("{:.3} с", g.default_lines), Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Пауза:    ", Style::default().fg(Color::Gray)),
+                    Span::styled(format!("{} сек", g.countdown_secs), Style::default().fg(Color::Cyan)),
+                ]),
+            ]
+        }
         SettingsSection::Hotkeys => {
             let cfg = *app.hotkeys.lock().unwrap();
             vec![
@@ -714,6 +731,49 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(desc_block, cols[1]);
 
     match section {
+        SettingsSection::General => {
+            let g = app.general;
+            let sel = app.settings_item;
+            let row = |label: &'static str, value: String, idx: usize| -> Line<'static> {
+                let selected = sel == idx;
+                let marker = if selected { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+                let label_style = if selected { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
+                let pad = 30usize.saturating_sub(label.len());
+                Line::from(vec![
+                    marker,
+                    Span::styled(label, label_style),
+                    Span::raw(" ".repeat(pad)),
+                    Span::styled(value, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                ])
+            };
+            let content = vec![
+                Line::from(Span::styled("Задержка по умолчанию", Style::default().fg(Color::DarkGray))),
+                row("  · Между клавишами", format!("{:.3} с", g.default_keys),  0),
+                row("  · Между строками",  format!("{:.3} с", g.default_lines), 1),
+                Line::from(""),
+                row("Пауза перед воспроизведением", format!("{} сек", g.countdown_secs), 2),
+            ];
+            frame.render_widget(Paragraph::new(content), cols[0]);
+
+            let desc_text = match sel {
+                0 => "Задержка между нажатиями клавиш при создании новой мелодии.\n←/→ изменить на 0.001 с",
+                1 => "Задержка между строками нот при создании новой мелодии.\n←/→ изменить на 0.001 с",
+                2 => "Через сколько секунд начнётся воспроизведение после нажатия хоткея.\n←/→ изменить на 1 сек",
+                _ => "",
+            };
+            frame.render_widget(
+                Paragraph::new(desc_text)
+                    .style(Style::default().fg(Color::DarkGray))
+                    .wrap(Wrap { trim: false }),
+                desc_inner,
+            );
+
+            let hint = Line::from(Span::styled(
+                "↑↓ выбор   ←/→ изменить   Esc назад",
+                Style::default().fg(Color::DarkGray),
+            ));
+            frame.render_widget(Paragraph::new(hint), rows[3]);
+        }
         SettingsSection::Hotkeys => {
             let cfg = *app.hotkeys.lock().unwrap();
             let item = |label: &'static str, value: String, color: Color, selected: bool| -> Line<'static> {

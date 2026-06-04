@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use ratatui::widgets::ListState;
 use tui_textarea::TextArea;
 
+use crate::general::GeneralConfig;
 use crate::hotkeys::HotkeyConfig;
 use crate::notifications::NotificationConfig;
 use crate::parser::TokenSpan;
@@ -34,17 +35,19 @@ pub enum Mode {
 /// Разделы в меню настроек.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SettingsSection {
+    General,
     Hotkeys,
     Notifications,
 }
 
 impl SettingsSection {
     pub fn all() -> &'static [SettingsSection] {
-        &[SettingsSection::Hotkeys, SettingsSection::Notifications]
+        &[SettingsSection::General, SettingsSection::Hotkeys, SettingsSection::Notifications]
     }
 
     pub fn label(self) -> &'static str {
         match self {
+            SettingsSection::General => "Общие",
             SettingsSection::Hotkeys => "Хоткеи",
             SettingsSection::Notifications => "Уведомления",
         }
@@ -117,6 +120,8 @@ pub struct App {
     pub hotkeys: Arc<Mutex<HotkeyConfig>>,
     /// Настройки уведомлений.
     pub notif_config: NotificationConfig,
+    /// Общие настройки.
+    pub general: GeneralConfig,
     /// Громкость звука 0.0–1.0 (общая с аудио-потоком).
     pub volume: Arc<Mutex<f32>>,
 
@@ -144,7 +149,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let bookmarks = storage::load_bookmarks();
-        let (config, volume, notif_config) = storage::load_config();
+        let (config, volume, notif_config, general) = storage::load_config();
         let mut list_state = ListState::default();
         if !bookmarks.is_empty() {
             list_state.select(Some(0));
@@ -171,6 +176,7 @@ impl App {
             settings_item: 0,
             hotkeys: Arc::new(Mutex::new(config)),
             notif_config,
+            general,
             volume: Arc::new(Mutex::new(volume)),
             focused: true,
             status: String::new(),
@@ -270,8 +276,8 @@ impl App {
         }
         self.textarea = TextArea::default();
         self.input = name.clone();
-        self.input_keys = "0.110".to_string();
-        self.input_lines = "0.110".to_string();
+        self.input_keys = format!("{:.3}", self.general.default_keys);
+        self.input_lines = format!("{:.3}", self.general.default_lines);
         self.delay_field = 0;
         self.edit_focus = EditFocus::Notes;
         self.creating = Some(name);
@@ -418,7 +424,7 @@ impl App {
     fn persist_config(&self) -> std::io::Result<()> {
         let cfg = *self.hotkeys.lock().unwrap();
         let vol = *self.volume.lock().unwrap();
-        storage::save_config(&cfg, vol, &self.notif_config)
+        storage::save_config(&cfg, vol, &self.notif_config, &self.general)
     }
 
     /// Сбрасывает хоткеи к значениям по умолчанию и сохраняет конфиг.

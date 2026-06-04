@@ -17,8 +17,11 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use crate::debug;
 use crate::parser::{Event, KeyAction};
 
-/// Сколько секунд отсчитывать перед стартом мелодии.
-pub const COUNTDOWN_SECS: u64 = 3;
+/// Запрос на воспроизведение мелодии.
+pub struct PlayRequest {
+    pub events: Vec<Event>,
+    pub countdown_secs: u64,
+}
 
 /// Сообщения от потока воспроизведения в UI.
 #[derive(Debug)]
@@ -147,12 +150,12 @@ fn sleep_interruptible(secs: f64, stop: &AtomicBool) {
 }
 
 /// Запускает постоянный поток воспроизведения. Мелодии приходят через `rx`.
-pub fn spawn(rx: Receiver<Vec<Event>>, stop: Arc<AtomicBool>, tx: Sender<PlayerMsg>) {
+pub fn spawn(rx: Receiver<PlayRequest>, stop: Arc<AtomicBool>, tx: Sender<PlayerMsg>) {
     thread::spawn(move || match Enigo::new(&Settings::default()) {
         Ok(mut enigo) => {
             debug::log("player: enigo инициализирован, поток готов");
-            while let Ok(events) = rx.recv() {
-                play_one(&mut enigo, &events, &stop, &tx);
+            while let Ok(req) = rx.recv() {
+                play_one(&mut enigo, &req.events, req.countdown_secs, &stop, &tx);
             }
             debug::log("player: канал закрыт, поток завершается");
         }
@@ -166,9 +169,9 @@ pub fn spawn(rx: Receiver<Vec<Event>>, stop: Arc<AtomicBool>, tx: Sender<PlayerM
     });
 }
 
-fn play_one(enigo: &mut Enigo, events: &[Event], stop: &AtomicBool, tx: &Sender<PlayerMsg>) {
+fn play_one(enigo: &mut Enigo, events: &[Event], countdown_secs: u64, stop: &AtomicBool, tx: &Sender<PlayerMsg>) {
     // Обратный отсчёт перед стартом.
-    for n in (1..=COUNTDOWN_SECS).rev() {
+    for n in (1..=countdown_secs).rev() {
         if stop.load(Ordering::Relaxed) {
             let _ = tx.send(PlayerMsg::Stopped(0));
             return;
