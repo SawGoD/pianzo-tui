@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, EditFocus, Mode};
+use crate::app::{App, EditFocus, Mode, SettingsSection};
 use crate::parser::TokenSpan;
 
 /// Цвет нот (превью и непроигранные в караоке) — мягкий бежевый.
@@ -44,7 +44,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Mode::AddName => draw_name_modal(frame, app, "Название новой мелодии"),
         Mode::SaveBookmark => draw_name_modal(frame, app, "Имя закладки"),
         Mode::ConfirmDelete => draw_confirm_delete(frame, app),
-        Mode::HotkeyMenu => draw_hotkey_menu(frame, app),
+        Mode::Settings => draw_settings(frame, app),
         Mode::CaptureStart => draw_capture(frame, "СТАРТА"),
         Mode::CaptureStop => draw_capture(frame, "СТОПА"),
         Mode::Normal => {}
@@ -73,7 +73,7 @@ fn draw_title(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(n) = app.countdown {
         spans.push(Span::styled(
             format!("   ⏳ {n}"),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ));
     } else if app.playing {
         let (done, total) = app.progress;
@@ -146,11 +146,11 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
     let params = Paragraph::new(vec![
         Line::from(vec![
             Span::styled("Между клавишами: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{hk:.3} c"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{hk:.3} c"), Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
             Span::styled("Между строками:  ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{hl:.3} c"), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{hl:.3} c"), Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
             Span::styled("Громкость:       ", Style::default().fg(Color::Gray)),
@@ -225,7 +225,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
     let played = Style::default().fg(Color::DarkGray);
     let current = Style::default()
         .fg(Color::Black)
-        .bg(Color::Yellow)
+        .bg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
     let future = Style::default().fg(NOTES_COLOR);
 
@@ -277,7 +277,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let (text, color) = if let Some(n) = app.countdown {
-        (format!("⏳ Старт через {n}…  (переключитесь в нужное окно)"), Color::Yellow)
+        (format!("⏳ Старт через {n}…  (переключитесь в нужное окно)"), Color::Cyan)
     } else if app.playing {
         let (done, total) = app.progress;
         (format!("▶ ВОСПРОИЗВЕДЕНИЕ  {done}/{total}"), Color::Green)
@@ -345,10 +345,10 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let right = Line::from(vec![
         Span::styled("+/-", Style::default().fg(Color::Magenta)),
         Span::raw(" громк.  "),
-        Span::styled("u", Style::default().fg(Color::Yellow)),
+        Span::styled("u", Style::default().fg(Color::Cyan)),
         Span::raw(" фокус  "),
-        Span::styled("h", Style::default().fg(Color::Yellow)),
-        Span::raw(" хоткеи  "),
+        Span::styled("s", Style::default().fg(Color::Cyan)),
+        Span::raw(" настройки  "),
         Span::styled("q", Style::default().fg(Color::Magenta)),
         Span::raw(" выход"),
     ]);
@@ -375,12 +375,12 @@ fn draw_name_modal(frame: &mut Frame, app: &App, title: &str) {
     frame.render_widget(Clear, area);
     let para = Paragraph::new(Line::from(vec![
         Span::raw(app.input.as_str()),
-        Span::styled("▏", Style::default().fg(Color::Yellow)),
+        Span::styled("▏", Style::default().fg(Color::Cyan)),
     ]))
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(Color::Cyan))
             .title(format!(" {title} ")),
     );
     frame.render_widget(para, area);
@@ -433,7 +433,7 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     // Имя (редактируемое).
     let name_active = app.edit_focus == EditFocus::Name;
     let name_val_style = if name_active {
-        Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
@@ -451,9 +451,9 @@ fn draw_edit(frame: &mut Frame, app: &mut App) {
     let delays_active = app.edit_focus == EditFocus::Delays;
     let field = |label: &str, value: &str, active: bool, lead: Span<'static>| -> Line<'static> {
         let vs = if active {
-            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(Color::Cyan)
         };
         Line::from(vec![
             lead,
@@ -557,31 +557,263 @@ fn draw_confirm_delete(frame: &mut Frame, app: &App) {
     frame.render_widget(para, area);
 }
 
-fn draw_hotkey_menu(frame: &mut Frame, app: &App) {
-    let cfg = *app.hotkeys.lock().unwrap();
-    let area = modal_rect(56, 7, frame.area());
+fn settings_modal_rect(area: Rect) -> Rect {
+    let width = (area.width * 70) / 100;
+    let height = (area.height * 70) / 100;
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect { x, y, width, height }
+}
+
+fn draw_settings(frame: &mut Frame, app: &App) {
+    let area = settings_modal_rect(frame.area());
     frame.render_widget(Clear, area);
-    let para = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("[1] Старт: ", Style::default().fg(Color::Gray)),
-            Span::styled(cfg.start.label(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        ]),
-        Line::from(vec![
-            Span::styled("[2] Стоп:  ", Style::default().fg(Color::Gray)),
-            Span::styled(cfg.stop.label(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        ]),
-        Line::from(Span::styled(
-            "1/2 — переназначить · Ctrl+Backspace — сброс · Esc — закрыть",
-            Style::default().fg(Color::DarkGray),
-        )),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
-            .title(" Хоткеи "),
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Настройки ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if app.settings_inside {
+        draw_settings_section(frame, app, inner);
+    } else {
+        draw_settings_list(frame, app, inner);
+    }
+}
+
+fn draw_settings_list(frame: &mut Frame, app: &App, area: Rect) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .split(area);
+
+    // Левая колонка — список разделов.
+    let sections = SettingsSection::all();
+    let items: Vec<Line> = sections
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            if i == app.settings_selected {
+                Line::from(vec![
+                    Span::styled("▶ ", Style::default().fg(Color::Cyan)),
+                    Span::styled(s.label(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(s.label(), Style::default().fg(Color::White)),
+                ])
+            }
+        })
+        .collect();
+
+    let list_block = Block::default()
+        .borders(Borders::RIGHT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let list_inner = list_block.inner(cols[0]);
+    frame.render_widget(list_block, cols[0]);
+    frame.render_widget(Paragraph::new(items), list_inner);
+
+    // Правая колонка — превью выбранного раздела.
+    let preview = settings_section_preview(app, sections[app.settings_selected]);
+    let hint = Line::from(Span::styled(
+        "↑↓ выбор   →/Enter войти   Esc закрыть",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    let right_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(cols[1]);
+
+    let padded = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .split(right_rows[0]);
+
+    frame.render_widget(Paragraph::new(preview), padded[1]);
+    frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), right_rows[1]);
+}
+
+fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<Line<'a>> {
+    match section {
+        SettingsSection::Hotkeys => {
+            let cfg = *app.hotkeys.lock().unwrap();
+            vec![
+                Line::from(vec![
+                    Span::styled("Старт: ", Style::default().fg(Color::Gray)),
+                    Span::styled(cfg.start.label(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Стоп:  ", Style::default().fg(Color::Gray)),
+                    Span::styled(cfg.stop.label(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                ]),
+            ]
+        }
+        SettingsSection::Notifications => {
+            let nc = app.notif_config;
+            let val = |on: bool| if on { "вкл" } else { "выкл" };
+            // Одинаковые названия с разделом — паддинг до 28 символов для выравнивания.
+            let row = |label: &'static str, on: bool, color: Color| -> Line<'static> {
+                Line::from(vec![
+                    Span::styled(format!("{:<28}", format!("{}:", label)), Style::default().fg(Color::Gray)),
+                    Span::styled(val(on), Style::default().fg(color)),
+                ])
+            };
+            vec![
+                row("Разрешить уведомления",       nc.enabled,    if nc.enabled    { Color::Cyan } else { Color::DarkGray }),
+                row("Сейчас играет",               nc.on_playing, if nc.on_playing { Color::Cyan } else { Color::DarkGray }),
+                row("Остановлено",                 nc.on_stopped, if nc.on_stopped { Color::Cyan } else { Color::DarkGray }),
+                row("Воспроизведение завершено",   nc.on_finished,if nc.on_finished{ Color::Cyan } else { Color::DarkGray }),
+                row("Ошибка доступа",              nc.on_error,   if nc.on_error   { Color::Cyan } else { Color::DarkGray }),
+            ]
+        }
+    }
+}
+
+fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
+    let sections = SettingsSection::all();
+    let section = sections[app.settings_selected];
+
+    // Строка-хлебная крошка: < На главную · **Хоткеи**
+    let breadcrumb = Line::from(vec![
+        Span::styled("< ", Style::default().fg(Color::DarkGray)),
+        Span::styled("На главную", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+        Span::styled("  ·  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(section.label(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+    ]);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // хлебная крошка
+            Constraint::Length(1), // разделитель
+            Constraint::Min(1),    // содержимое
+            Constraint::Length(1), // подсказка
+        ])
+        .split(area);
+
+    frame.render_widget(Paragraph::new(breadcrumb), rows[0]);
+    frame.render_widget(
+        Block::default().borders(Borders::TOP).border_style(Style::default().fg(Color::DarkGray)),
+        rows[1],
     );
-    frame.render_widget(para, area);
+
+    // Разбиваем область содержимого на левую (список) и правую (описание).
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(rows[2]);
+
+    let desc_block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let desc_inner = desc_block.inner(cols[1]);
+    frame.render_widget(desc_block, cols[1]);
+
+    match section {
+        SettingsSection::Hotkeys => {
+            let cfg = *app.hotkeys.lock().unwrap();
+            let item = |label: &'static str, value: String, color: Color, selected: bool| -> Line<'static> {
+                let (marker, label_style) = if selected {
+                    ("▶ ", Style::default().fg(Color::Cyan))
+                } else {
+                    ("  ", Style::default().fg(Color::Gray))
+                };
+                Line::from(vec![
+                    Span::styled(marker, Style::default().fg(Color::Cyan)),
+                    Span::styled(label, label_style),
+                    Span::styled(value, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ])
+            };
+            let content = vec![
+                item("Старт: ", cfg.start.label(), Color::Green, app.settings_item == 0),
+                item("Стоп:  ", cfg.stop.label(), Color::Red,   app.settings_item == 1),
+            ];
+            frame.render_widget(Paragraph::new(content), cols[0]);
+
+            let desc_text = match app.settings_item {
+                0 => "Глобальный хоткей для запуска воспроизведения нот в активном окне.",
+                1 => "Глобальный хоткей для остановки воспроизведения.",
+                _ => "",
+            };
+            frame.render_widget(
+                Paragraph::new(desc_text)
+                    .style(Style::default().fg(Color::DarkGray))
+                    .wrap(Wrap { trim: false }),
+                desc_inner,
+            );
+
+            let hint = Line::from(Span::styled(
+                "↑↓ выбор   Enter/→ переназначить   Ctrl+Backspace сброс   ←/Esc назад",
+                Style::default().fg(Color::DarkGray),
+            ));
+            frame.render_widget(Paragraph::new(hint), rows[3]);
+        }
+        SettingsSection::Notifications => {
+            let nc = app.notif_config;
+            let toggle = |on: bool| -> Span<'static> {
+                if on {
+                    Span::styled(" ВКЛ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+                } else {
+                    Span::styled(" ВЫКЛ", Style::default().fg(Color::DarkGray))
+                }
+            };
+            let sel = app.settings_item;
+
+            const G_PAD: usize = 29;
+            const C_PAD: usize = 25;
+
+            let global_marker = if sel == 0 { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+            let global_label_style = if sel == 0 { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
+            let global_label = Span::styled(format!("{:<G_PAD$}", "Разрешить уведомления"), global_label_style);
+
+            let child = |label: &str, on: bool, idx: usize| -> Line<'_> {
+                let selected = sel == idx;
+                let active = nc.enabled;
+                let prefix_style = if selected && active { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::DarkGray) };
+                let label_style = if !active { Style::default().fg(Color::DarkGray) } else if selected { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(if selected { "▶ · " } else { "  · " }, prefix_style),
+                    Span::styled(format!("{:<C_PAD$}", label), label_style),
+                    toggle(on && active),
+                ])
+            };
+
+            let content = vec![
+                Line::from(vec![global_marker, global_label, toggle(nc.enabled)]),
+                child("Сейчас играет",             nc.on_playing,  1),
+                child("Остановлено",               nc.on_stopped,  2),
+                child("Воспроизведение завершено",  nc.on_finished, 3),
+                child("Ошибка доступа",            nc.on_error,    4),
+            ];
+            frame.render_widget(Paragraph::new(content), cols[0]);
+
+            let desc_text = match sel {
+                0 => "Главный переключатель. Отключает все уведомления сразу.",
+                1 => "Появляется в момент начала воспроизведения нот.",
+                2 => "Появляется при остановке воспроизведения по хоткею.",
+                3 => "Появляется когда ноты доиграли до конца.",
+                4 => "Появляется если macOS заблокировала Accessibility или Input Monitoring.",
+                _ => "",
+            };
+            frame.render_widget(
+                Paragraph::new(desc_text)
+                    .style(Style::default().fg(Color::DarkGray))
+                    .wrap(Wrap { trim: false }),
+                desc_inner,
+            );
+
+            let hint = Line::from(Span::styled(
+                "↑↓ выбор   Enter/Пробел переключить   ←/Esc назад",
+                Style::default().fg(Color::DarkGray),
+            ));
+            frame.render_widget(Paragraph::new(hint), rows[3]);
+        }
+    }
 }
 
 fn draw_capture(frame: &mut Frame, target: &str) {
@@ -595,7 +827,7 @@ fn draw_capture(frame: &mut Frame, target: &str) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(Color::Cyan))
             .title(" Перепривязка "),
     );
     frame.render_widget(para, area);

@@ -6,6 +6,7 @@ use ratatui::widgets::ListState;
 use tui_textarea::TextArea;
 
 use crate::hotkeys::HotkeyConfig;
+use crate::notifications::NotificationConfig;
 use crate::parser::TokenSpan;
 use crate::storage::{self, Bookmark};
 
@@ -22,12 +23,32 @@ pub enum Mode {
     SaveBookmark,
     /// Подтверждение удаления закладки.
     ConfirmDelete,
-    /// Меню настройки хоткеев.
-    HotkeyMenu,
+    /// Меню настроек (двухколоночный попап).
+    Settings,
     /// Захват новой комбинации для старта.
     CaptureStart,
     /// Захват новой комбинации для стопа.
     CaptureStop,
+}
+
+/// Разделы в меню настроек.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SettingsSection {
+    Hotkeys,
+    Notifications,
+}
+
+impl SettingsSection {
+    pub fn all() -> &'static [SettingsSection] {
+        &[SettingsSection::Hotkeys, SettingsSection::Notifications]
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SettingsSection::Hotkeys => "Хоткеи",
+            SettingsSection::Notifications => "Уведомления",
+        }
+    }
 }
 
 /// Фокус внутри окна правки.
@@ -86,8 +107,16 @@ pub struct App {
     /// Редактор нот.
     pub textarea: TextArea<'static>,
 
+    /// Состояние меню настроек: выбранный раздел, признак «внутри раздела»,
+    /// и выбранный пункт внутри раздела.
+    pub settings_selected: usize,
+    pub settings_inside: bool,
+    pub settings_item: usize,
+
     /// Конфиг хоткеев (общий со слушателем).
     pub hotkeys: Arc<Mutex<HotkeyConfig>>,
+    /// Настройки уведомлений.
+    pub notif_config: NotificationConfig,
     /// Громкость звука 0.0–1.0 (общая с аудио-потоком).
     pub volume: Arc<Mutex<f32>>,
 
@@ -115,7 +144,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let bookmarks = storage::load_bookmarks();
-        let (config, volume) = storage::load_config();
+        let (config, volume, notif_config) = storage::load_config();
         let mut list_state = ListState::default();
         if !bookmarks.is_empty() {
             list_state.select(Some(0));
@@ -137,7 +166,11 @@ impl App {
             creating: None,
             editing: None,
             textarea: TextArea::default(),
+            settings_selected: 0,
+            settings_inside: false,
+            settings_item: 0,
             hotkeys: Arc::new(Mutex::new(config)),
+            notif_config,
             volume: Arc::new(Mutex::new(volume)),
             focused: true,
             status: String::new(),
@@ -378,10 +411,14 @@ impl App {
     }
 
     /// Сохраняет текущие хоткеи и громкость в конфиг.
+    pub fn persist_config_pub(&self) -> std::io::Result<()> {
+        self.persist_config()
+    }
+
     fn persist_config(&self) -> std::io::Result<()> {
         let cfg = *self.hotkeys.lock().unwrap();
         let vol = *self.volume.lock().unwrap();
-        storage::save_config(&cfg, vol)
+        storage::save_config(&cfg, vol, &self.notif_config)
     }
 
     /// Сбрасывает хоткеи к значениям по умолчанию и сохраняет конфиг.
