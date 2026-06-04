@@ -104,6 +104,11 @@ fn run(
                     app.playing = false;
                     app.countdown = None;
                     app.status = "Готово.".to_string();
+                    if app.notif_config.enabled && app.notif_config.on_finished {
+                        if let Some(name) = &app.current_name {
+                            notifications::finished(name);
+                        }
+                    }
                 }
                 PlayerMsg::Stopped(at) => {
                     app.playing = false;
@@ -119,6 +124,9 @@ fn run(
                     app.playing = false;
                     app.countdown = None;
                     app.status = format!("{e}. Разрешите Accessibility в System Settings.");
+                    if app.notif_config.enabled && app.notif_config.on_error {
+                        notifications::access_error();
+                    }
                 }
             }
         }
@@ -481,7 +489,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
             }
         }
         SettingsSection::Notifications => {
-            let max_item = 2;
+            let max_item = 4;
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     if app.settings_item > 0 {
@@ -498,6 +506,8 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                         0 => app.notif_config.toggle_global(),
                         1 if app.notif_config.enabled => app.notif_config.toggle_playing(),
                         2 if app.notif_config.enabled => app.notif_config.toggle_stopped(),
+                        3 if app.notif_config.enabled => app.notif_config.toggle_finished(),
+                        4 if app.notif_config.enabled => app.notif_config.toggle_error(),
                         _ => {}
                     }
                     let _ = app.persist_config_pub();

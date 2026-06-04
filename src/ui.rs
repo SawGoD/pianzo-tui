@@ -668,6 +668,14 @@ fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<L
                     Span::styled("Остановлено:   ", Style::default().fg(Color::Gray)),
                     Span::styled(val(nc.on_stopped), Style::default().fg(if nc.on_stopped { Color::Cyan } else { Color::DarkGray })),
                 ]),
+                Line::from(vec![
+                    Span::styled("Завершено:     ", Style::default().fg(Color::Gray)),
+                    Span::styled(val(nc.on_finished), Style::default().fg(if nc.on_finished { Color::Cyan } else { Color::DarkGray })),
+                ]),
+                Line::from(vec![
+                    Span::styled("Ошибка доступа:", Style::default().fg(Color::Gray)),
+                    Span::styled(val(nc.on_error), Style::default().fg(if nc.on_error { Color::Cyan } else { Color::DarkGray })),
+                ]),
             ]
         }
     }
@@ -771,8 +779,10 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
 
             let content = vec![
                 Line::from(vec![global_marker, global_label, Span::raw("  "), toggle(nc.enabled)]),
-                child("Сейчас играет", nc.on_playing, 1),
-                child("Остановлено",   nc.on_stopped, 2),
+                child("Сейчас играет",            nc.on_playing,  1),
+                child("Остановлено",              nc.on_stopped,  2),
+                child("Воспроизведение завершено", nc.on_finished, 3),
+                child("Ошибка доступа",           nc.on_error,    4),
             ];
             frame.render_widget(Paragraph::new(content), rows[2]);
 
