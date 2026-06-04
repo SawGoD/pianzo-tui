@@ -21,10 +21,13 @@ jobs:
         include:
           - os: macos-14 # Apple Silicon (нативно)
             target: aarch64-apple-darwin
+            artifact: pianzo-tui_silicon-apple
           - os: macos-14 # Intel — кросс-компиляция на arm-раннере
             target: x86_64-apple-darwin   # дефицитные macos-13 раннеры зависают в очереди
+            artifact: pianzo-tui_intel-apple
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            artifact: pianzo-tui_x86_64-windows
     steps:
       - uses: actions/checkout@v4
 
@@ -45,20 +48,37 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           tar -C target/${{ matrix.target }}/release -czf \
-            pianzo-tui-${{ matrix.target }}.tar.gz pianzo-tui
+            ${{ matrix.artifact }}.tar.gz pianzo-tui
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Compress-Archive -Path target/${{ matrix.target }}/release/pianzo-tui.exe `
-            -DestinationPath pianzo-tui-${{ matrix.target }}.zip
+            -DestinationPath ${{ matrix.artifact }}.zip
 
       - name: Publish to Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            pianzo-tui-*.tar.gz
-            pianzo-tui-*.zip
+            pianzo-tui_*.tar.gz
+            pianzo-tui_*.zip
           generate_release_notes: true
+          body: |
+            ## Установка
+
+            | Платформа | Файл |
+            |-----------|------|
+            | macOS Apple Silicon (M1/M2/M3) | `pianzo-tui_silicon-apple.tar.gz` |
+            | macOS Intel | `pianzo-tui_intel-apple.tar.gz` |
+            | Windows x86-64 | `pianzo-tui_x86_64-windows.zip` |
+
+            ### macOS
+            ```bash
+            tar -xzf pianzo-tui_silicon-apple.tar.gz   # или intel-apple
+            ./pianzo-tui
+            ```
+
+            ### Windows
+            Распакуйте `pianzo-tui_x86_64-windows.zip` и запустите `pianzo-tui.exe`.
