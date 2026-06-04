@@ -701,6 +701,18 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
         rows[1],
     );
 
+    // Разбиваем область содержимого на левую (список) и правую (описание).
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(rows[2]);
+
+    let desc_block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let desc_inner = desc_block.inner(cols[1]);
+    frame.render_widget(desc_block, cols[1]);
+
     match section {
         SettingsSection::Hotkeys => {
             let cfg = *app.hotkeys.lock().unwrap();
@@ -720,7 +732,20 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 item("Старт: ", cfg.start.label(), Color::Green, app.settings_item == 0),
                 item("Стоп:  ", cfg.stop.label(), Color::Red,   app.settings_item == 1),
             ];
-            frame.render_widget(Paragraph::new(content), rows[2]);
+            frame.render_widget(Paragraph::new(content), cols[0]);
+
+            let desc_text = match app.settings_item {
+                0 => "Глобальный хоткей для запуска воспроизведения нот в активном окне.",
+                1 => "Глобальный хоткей для остановки воспроизведения.",
+                _ => "",
+            };
+            frame.render_widget(
+                Paragraph::new(desc_text)
+                    .style(Style::default().fg(Color::DarkGray))
+                    .wrap(Wrap { trim: false }),
+                desc_inner,
+            );
+
             let hint = Line::from(Span::styled(
                 "↑↓ выбор   Enter/→ переназначить   Ctrl+Backspace сброс   ←/Esc назад",
                 Style::default().fg(Color::DarkGray),
@@ -738,8 +763,6 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
             };
             let sel = app.settings_item;
 
-            // Префикс global=2, child=6 → toggle на колонке 33.
-            // global label pad = 33 - 2 - 2 = 29, child label pad = 33 - 6 - 2 = 25.
             const G_PAD: usize = 29;
             const C_PAD: usize = 25;
 
@@ -762,12 +785,27 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
 
             let content = vec![
                 Line::from(vec![global_marker, global_label, toggle(nc.enabled)]),
-                child("Сейчас играет",            nc.on_playing,  1),
-                child("Остановлено",              nc.on_stopped,  2),
-                child("Воспроизведение завершено", nc.on_finished, 3),
-                child("Ошибка доступа",           nc.on_error,    4),
+                child("Сейчас играет",             nc.on_playing,  1),
+                child("Остановлено",               nc.on_stopped,  2),
+                child("Воспроизведение завершено",  nc.on_finished, 3),
+                child("Ошибка доступа",            nc.on_error,    4),
             ];
-            frame.render_widget(Paragraph::new(content), rows[2]);
+            frame.render_widget(Paragraph::new(content), cols[0]);
+
+            let desc_text = match sel {
+                0 => "Главный переключатель. Отключает все уведомления сразу.",
+                1 => "Появляется в момент начала воспроизведения нот.",
+                2 => "Появляется при остановке воспроизведения по хоткею.",
+                3 => "Появляется когда ноты доиграли до конца.",
+                4 => "Появляется если macOS заблокировала Accessibility или Input Monitoring.",
+                _ => "",
+            };
+            frame.render_widget(
+                Paragraph::new(desc_text)
+                    .style(Style::default().fg(Color::DarkGray))
+                    .wrap(Wrap { trim: false }),
+                desc_inner,
+            );
 
             let hint = Line::from(Span::styled(
                 "↑↓ выбор   Enter/Пробел переключить   ←/Esc назад",
