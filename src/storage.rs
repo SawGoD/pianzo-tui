@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::general::GeneralConfig;
 use crate::hotkeys::HotkeyConfig;
 use crate::notifications::NotificationConfig;
+use crate::processes::ProcessConfig;
 
 /// Сохранённая мелодия со своими задержками.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -194,7 +195,7 @@ fn default_volume() -> f32 {
     0.5
 }
 
-/// Сохраняемый конфиг: хоткеи + громкость + уведомления + общие.
+/// Сохраняемый конфиг: хоткеи + громкость + уведомления + общие + процессы.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct StoredConfig {
     #[serde(flatten)]
@@ -205,21 +206,33 @@ struct StoredConfig {
     notifications: NotificationConfig,
     #[serde(default)]
     general: GeneralConfig,
+    #[serde(default)]
+    processes: ProcessConfig,
 }
 
 /// Загружает конфиг (или значения по умолчанию).
-pub fn load_config() -> (HotkeyConfig, f32, NotificationConfig, GeneralConfig) {
+pub fn load_config() -> (HotkeyConfig, f32, NotificationConfig, GeneralConfig, ProcessConfig) {
     match fs::read_to_string(config_path()) {
         Ok(s) => match serde_json::from_str::<StoredConfig>(&s) {
-            Ok(c) => (c.hotkeys, c.volume.clamp(0.0, 1.0), c.notifications, c.general),
-            Err(_) => (HotkeyConfig::default(), default_volume(), NotificationConfig::default(), GeneralConfig::default()),
+            Ok(c) => (c.hotkeys, c.volume.clamp(0.0, 1.0), c.notifications, c.general, c.processes),
+            Err(_) => defaults(),
         },
-        Err(_) => (HotkeyConfig::default(), default_volume(), NotificationConfig::default(), GeneralConfig::default()),
+        Err(_) => defaults(),
     }
 }
 
+fn defaults() -> (HotkeyConfig, f32, NotificationConfig, GeneralConfig, ProcessConfig) {
+    (HotkeyConfig::default(), default_volume(), NotificationConfig::default(), GeneralConfig::default(), ProcessConfig::default())
+}
+
 /// Сохраняет конфиг.
-pub fn save_config(hotkeys: &HotkeyConfig, volume: f32, notifications: &NotificationConfig, general: &GeneralConfig) -> std::io::Result<()> {
+pub fn save_config(
+    hotkeys: &HotkeyConfig,
+    volume: f32,
+    notifications: &NotificationConfig,
+    general: &GeneralConfig,
+    processes: &ProcessConfig,
+) -> std::io::Result<()> {
     let dir = pianzo_dir();
     fs::create_dir_all(&dir)?;
     let stored = StoredConfig {
@@ -227,6 +240,7 @@ pub fn save_config(hotkeys: &HotkeyConfig, volume: f32, notifications: &Notifica
         volume,
         notifications: *notifications,
         general: *general,
+        processes: processes.clone(),
     };
     let json = serde_json::to_string_pretty(&stored).unwrap_or_else(|_| "{}".to_string());
     fs::write(config_path(), json)

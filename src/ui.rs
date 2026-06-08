@@ -276,7 +276,7 @@ fn build_karaoke(app: &App) -> Text<'_> {
 }
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
-    let (text, color) = if let Some(n) = app.countdown {
+    let (left_text, left_color) = if let Some(n) = app.countdown {
         (format!("⏳ Старт через {n}…  (переключитесь в нужное окно)"), Color::Cyan)
     } else if app.playing {
         let (done, total) = app.progress;
@@ -286,17 +286,57 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         (format!("● {}", app.status), Color::Cyan)
     };
-    let para = Paragraph::new(Line::from(Span::styled(
-        text,
-        Style::default().fg(color).add_modifier(Modifier::BOLD),
-    )))
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme(app)))
-            .title(" Статус "),
-    );
-    frame.render_widget(para, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme(app)))
+        .title(" Статус ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Правая часть: активное окно (только когда включена фильтрация процессов).
+    let win_indicator: Option<(String, Color)> = if app.process_config.enabled {
+        let win_name = app.active_window.as_deref().unwrap_or("—");
+        let color = match app.process_config.window_mode(win_name) {
+            Some(crate::processes::ProcessMode::Track) => Color::Green,
+            Some(crate::processes::ProcessMode::Ignore) => Color::Red,
+            _ => Color::DarkGray,
+        };
+        Some((win_name.to_string(), color))
+    } else {
+        None
+    };
+
+    if let Some((win_name, win_color)) = win_indicator {
+        let right_width = (win_name.chars().count() as u16 + 5).min(inner.width.saturating_sub(20));
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(1), Constraint::Length(right_width)])
+            .split(inner);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                left_text,
+                Style::default().fg(left_color).add_modifier(Modifier::BOLD),
+            ))),
+            cols[0],
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(win_name, Style::default().fg(win_color).add_modifier(Modifier::BOLD)),
+            ]))
+            .alignment(Alignment::Right),
+            cols[1],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                left_text,
+                Style::default().fg(left_color).add_modifier(Modifier::BOLD),
+            ))),
+            inner,
+        );
+    }
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
@@ -637,7 +677,7 @@ fn draw_settings_list(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), right_rows[1]);
 }
 
-fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<Line<'a>> {
+fn settings_section_preview(app: &App, section: SettingsSection) -> Vec<Line<'static>> {
     match section {
         SettingsSection::General => {
             let g = app.general;
@@ -685,6 +725,21 @@ fn settings_section_preview<'a>(app: &'a App, section: SettingsSection) -> Vec<L
                 row("Остановлено",                 nc.on_stopped, if nc.on_stopped { Color::Cyan } else { Color::DarkGray }),
                 row("Воспроизведение завершено",   nc.on_finished,if nc.on_finished{ Color::Cyan } else { Color::DarkGray }),
                 row("Ошибка доступа",              nc.on_error,   if nc.on_error   { Color::Cyan } else { Color::DarkGray }),
+            ]
+        }
+        SettingsSection::Processes => {
+            let pc = &app.process_config;
+            let status = if pc.enabled { "ВКЛ" } else { "ВЫКЛ" };
+            let status_color = if pc.enabled { Color::Cyan } else { Color::DarkGray };
+            vec![
+                Line::from(vec![
+                    Span::styled("Фильтрация: ", Style::default().fg(Color::Gray)),
+                    Span::styled(status, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Процессов: ", Style::default().fg(Color::Gray)),
+                    Span::styled(format!("{}", pc.entries.len()), Style::default().fg(Color::Cyan)),
+                ]),
             ]
         }
     }
@@ -904,7 +959,188 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
             ));
             frame.render_widget(Paragraph::new(hint), rows[3]);
         }
+        SettingsSection::Processes => {
+            draw_settings_processes(frame, app, cols[0], desc_inner, rows[3]);
+        }
     }
+}
+
+fn draw_settings_processes(
+    frame: &mut Frame,
+    app: &App,
+    left: Rect,
+    desc: Rect,
+    hint_area: Rect,
+) {
+    use crate::processes::ProcessMode;
+
+    let pc = &app.process_config;
+    let sel = app.settings_item;
+    let in_search = app.proc_in_search;
+
+    // --- Левая колонка ---
+    let toggle_span = if pc.enabled {
+        Span::styled(" ВКЛ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+    } else {
+        Span::styled(" ВЫКЛ", Style::default().fg(Color::DarkGray))
+    };
+    let toggle_marker = if sel == 0 && !in_search {
+        Span::styled("▶ ", Style::default().fg(Color::Cyan))
+    } else {
+        Span::raw("  ")
+    };
+    let toggle_label_style = if sel == 0 && !in_search {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let toggle_row = Line::from(vec![
+        toggle_marker,
+        Span::styled(format!("{:<28}", "Фильтрация по процессам"), toggle_label_style),
+        toggle_span,
+    ]);
+
+    // Строка поиска.
+    let search_marker = if sel == 1 && !in_search {
+        Span::styled("▶ ", Style::default().fg(Color::Cyan))
+    } else {
+        Span::raw("  ")
+    };
+    let search_style = if in_search {
+        Style::default().fg(Color::Black).bg(Color::Cyan)
+    } else if sel == 1 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let search_text = if in_search {
+        format!(" {} ", app.proc_search)
+    } else {
+        " Поиск процесса... ".to_string()
+    };
+    let search_row = Line::from(vec![
+        search_marker,
+        Span::styled("[ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(search_text, search_style),
+        Span::styled(" ]", Style::default().fg(Color::DarkGray)),
+    ]);
+
+    let mut lines: Vec<Line> = vec![
+        toggle_row,
+        Line::from(""),
+        search_row,
+    ];
+
+    // Дропдаун — только в режиме ввода.
+    if in_search {
+        if app.proc_filtered.is_empty() && !app.proc_search.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  (ничего не найдено)",
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            for (i, name) in app.proc_filtered.iter().enumerate() {
+                let selected = i == app.proc_dropdown_sel;
+                if selected {
+                    lines.push(Line::from(vec![
+                        Span::styled("  ▶ ", Style::default().fg(Color::Cyan)),
+                        Span::styled(name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    ]));
+                } else {
+                    lines.push(Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(name.clone(), Style::default().fg(Color::White)),
+                    ]));
+                }
+            }
+        }
+    } else if !pc.entries.is_empty() {
+        // Список добавленных процессов.
+        lines.push(Line::from(Span::styled(
+            "  ──────────────────────────────",
+            Style::default().fg(Color::DarkGray),
+        )));
+        for (i, entry) in pc.entries.iter().enumerate() {
+            let item_idx = 2 + i;
+            let selected = sel == item_idx;
+            let marker = if selected {
+                Span::styled("▶ ", Style::default().fg(Color::Cyan))
+            } else {
+                Span::raw("  ")
+            };
+            let name_style = if selected {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let (badge_text, badge_style) = match entry.mode {
+                ProcessMode::Track => (
+                    " ОТС ",
+                    Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD),
+                ),
+                ProcessMode::Ignore => (
+                    " ИГН ",
+                    Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                ProcessMode::None => (
+                    "  —  ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            };
+            lines.push(Line::from(vec![
+                marker,
+                Span::styled(format!("{:<28}", entry.name.as_str()), name_style),
+                Span::styled(badge_text, badge_style),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Список пуст. Найдите процесс выше.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(lines), left);
+
+    // --- Правая колонка: описание ---
+    let desc_text: &str = if in_search {
+        "Введите часть имени процесса.\n\n↑↓ — выбор в списке\nEnter — добавить\nEsc — отмена"
+    } else {
+        match sel {
+            0 => "Включает фильтрацию по процессам.\n\nКогда ВКЛ — воспроизведение разрешается или блокируется в зависимости от активного окна.\n\nКогда ВЫКЛ — работает только FOCUSED/UNFOCUSED.",
+            1 => "Поиск по запущенным процессам.\n\nНажмите Enter чтобы начать ввод.",
+            idx if idx >= 2 => {
+                let entry_idx = idx - 2;
+                match pc.entries.get(entry_idx).map(|e| e.mode) {
+                    Some(ProcessMode::Track) => "Режим: ОТСЛЕЖИВАТЬ\n\nВоспроизведение разрешено когда этот процесс в фокусе.\n\nEnter — сменить режим\nDel/d — удалить из списка",
+                    Some(ProcessMode::Ignore) => "Режим: ИГНОРИРОВАТЬ\n\nВоспроизведение заблокировано когда этот процесс в фокусе.\n\nEnter — сменить режим\nDel/d — удалить из списка",
+                    _ => "Режим: НЕ ЗАДАНО\n\nПроцесс добавлен, но режим не выбран. Используется FOCUSED/UNFOCUSED.\n\nEnter — сменить режим\nDel/d — удалить из списка",
+                }
+            }
+            _ => "",
+        }
+    };
+    frame.render_widget(
+        Paragraph::new(desc_text)
+            .style(Style::default().fg(Color::DarkGray))
+            .wrap(Wrap { trim: false }),
+        desc,
+    );
+
+    // --- Подсказка внизу ---
+    let hint = if in_search {
+        Line::from(Span::styled(
+            "Ввод — поиск   ↑↓ выбор   Enter добавить   Esc отмена",
+            Style::default().fg(Color::Cyan),
+        ))
+    } else {
+        Line::from(Span::styled(
+            "↑↓ выбор   Enter изменить   Del/d удалить   ←/Esc назад",
+            Style::default().fg(Color::DarkGray),
+        ))
+    };
+    frame.render_widget(Paragraph::new(hint), hint_area);
 }
 
 fn draw_capture(frame: &mut Frame, target: &str) {

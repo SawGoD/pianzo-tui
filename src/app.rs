@@ -9,6 +9,7 @@ use crate::general::GeneralConfig;
 use crate::hotkeys::HotkeyConfig;
 use crate::notifications::NotificationConfig;
 use crate::parser::TokenSpan;
+use crate::processes::{self, ProcessConfig, ProcessEntry, ProcessMode};
 use crate::storage::{self, Bookmark};
 
 /// Текущий режим ввода TUI.
@@ -38,11 +39,17 @@ pub enum SettingsSection {
     General,
     Hotkeys,
     Notifications,
+    Processes,
 }
 
 impl SettingsSection {
     pub fn all() -> &'static [SettingsSection] {
-        &[SettingsSection::General, SettingsSection::Hotkeys, SettingsSection::Notifications]
+        &[
+            SettingsSection::General,
+            SettingsSection::Hotkeys,
+            SettingsSection::Notifications,
+            SettingsSection::Processes,
+        ]
     }
 
     pub fn label(self) -> &'static str {
@@ -50,6 +57,7 @@ impl SettingsSection {
             SettingsSection::General => "Общие",
             SettingsSection::Hotkeys => "Хоткеи",
             SettingsSection::Notifications => "Уведомления",
+            SettingsSection::Processes => "Процессы",
         }
     }
 }
@@ -123,12 +131,28 @@ pub struct App {
     pub notif_config: NotificationConfig,
     /// Общие настройки.
     pub general: GeneralConfig,
+    /// Настройки фильтрации по процессам.
+    pub process_config: ProcessConfig,
     /// Громкость звука 0.0–1.0 (общая с аудио-потоком).
     pub volume: Arc<Mutex<f32>>,
 
     /// Активно ли реагирование на глобальный старт-хоткей.
     /// true = FOCUSED (норма), false = UNFOCUSED (старт не ловится вне терминала).
     pub focused: bool,
+    /// Имя активного окна/процесса (обновляется из window_tracker).
+    pub active_window: Option<String>,
+
+    // --- Состояние раздела «Процессы» в настройках ---
+    /// Список процессов, закешированных при открытии поиска.
+    pub proc_cached_list: Vec<String>,
+    /// Отфильтрованные результаты поиска.
+    pub proc_filtered: Vec<String>,
+    /// Текущий поисковый запрос.
+    pub proc_search: String,
+    /// Выбранный элемент в выпадающем списке поиска.
+    pub proc_dropdown_sel: usize,
+    /// Активен ли режим ввода в поле поиска.
+    pub proc_in_search: bool,
 
     pub status: String,
     pub playing: bool,
@@ -150,7 +174,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let bookmarks = storage::load_bookmarks();
-        let (config, volume, notif_config, general) = storage::load_config();
+        let (config, volume, notif_config, general, process_config) = storage::load_config();
         let mut list_state = ListState::default();
         if !bookmarks.is_empty() {
             list_state.select(Some(0));
@@ -179,8 +203,15 @@ impl App {
             hotkeys: Arc::new(Mutex::new(config)),
             notif_config,
             general,
+            process_config,
             volume: Arc::new(Mutex::new(volume)),
             focused: true,
+            active_window: None,
+            proc_cached_list: Vec::new(),
+            proc_filtered: Vec::new(),
+            proc_search: String::new(),
+            proc_dropdown_sel: 0,
+            proc_in_search: false,
             status: String::new(),
             playing: false,
             audio_playing: false,
@@ -426,7 +457,69 @@ impl App {
     fn persist_config(&self) -> std::io::Result<()> {
         let cfg = *self.hotkeys.lock().unwrap();
         let vol = *self.volume.lock().unwrap();
-        storage::save_config(&cfg, vol, &self.notif_config, &self.general)
+        storage::save_config(&cfg, vol, &self.notif_config, &self.general, &self.process_config)
+    }
+
+    /// Можно ли запустить воспроизведение с учётом фильтрации процессов.
+    pub fn can_start_play(&self) -> bool {
+        match self.process_config.should_allow(&self.active_window) {
+            Some(allowed) => allowed,
+            None => self.focused,
+        }
+    }
+
+    /// Открывает режим ввода поиска: загружает список процессов, если ещё не загружен.
+    pub fn proc_enter_search(&mut self) {
+        if self.proc_cached_list.is_empty() {
+            self.proc_cached_list = processes::list_running_processes();
+        }
+        self.proc_in_search = true;
+        self.proc_search.clear();
+        self.proc_filtered.clear();
+        self.proc_dropdown_sel = 0;
+    }
+
+    /// Закрывает режим ввода поиска.
+    pub fn proc_exit_search(&mut self) {
+        self.proc_in_search = false;
+        self.proc_search.clear();
+        self.proc_filtered.clear();
+        self.proc_dropdown_sel = 0;
+    }
+
+    /// Обновляет результаты поиска после изменения `proc_search`.
+    pub fn proc_update_filter(&mut self) {
+        self.proc_filtered = processes::search_processes(&self.proc_search, &self.proc_cached_list);
+        self.proc_dropdown_sel = 0;
+    }
+
+    /// Добавляет выбранный из дропдауна процесс в список (если его ещё нет).
+    pub fn proc_add_selected(&mut self) {
+        let Some(name) = self.proc_filtered.get(self.proc_dropdown_sel).cloned() else {
+            return;
+        };
+        let already = self.process_config.entries.iter().any(|e| e.name == name);
+        if !already {
+            self.process_config.entries.push(ProcessEntry { name, mode: ProcessMode::None });
+            let _ = self.persist_config();
+        }
+        self.proc_exit_search();
+    }
+
+    /// Циклически меняет режим записи по индексу в списке.
+    pub fn proc_cycle_mode(&mut self, idx: usize) {
+        if let Some(entry) = self.process_config.entries.get_mut(idx) {
+            entry.mode = entry.mode.next();
+            let _ = self.persist_config();
+        }
+    }
+
+    /// Удаляет запись из списка по индексу.
+    pub fn proc_remove_entry(&mut self, idx: usize) {
+        if idx < self.process_config.entries.len() {
+            self.process_config.entries.remove(idx);
+            let _ = self.persist_config();
+        }
     }
 
     /// Сбрасывает хоткеи к значениям по умолчанию и сохраняет конфиг.

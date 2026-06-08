@@ -6,8 +6,10 @@ mod hotkeys;
 mod notifications;
 mod parser;
 mod player;
+mod processes;
 mod storage;
 mod ui;
+mod window_tracker;
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,6 +30,7 @@ fn main() -> io::Result<()> {
     let (play_tx, play_rx) = mpsc::channel::<PlayRequest>();
     let (audio_tx, audio_rx) = mpsc::channel::<AudioRequest>();
     let (amsg_tx, amsg_rx) = mpsc::channel::<AudioMsg>();
+    let (wt_tx, wt_rx) = mpsc::channel::<Option<String>>();
     let stop = Arc::new(AtomicBool::new(false));
 
     let mut app = App::new();
@@ -39,6 +42,8 @@ fn main() -> io::Result<()> {
     player::spawn(play_rx, Arc::clone(&stop), pl_tx);
     // Постоянный аудио-поток.
     audio::spawn(audio_rx, Arc::clone(&stop), amsg_tx, Arc::clone(&app.volume));
+    // Трекер активного окна.
+    window_tracker::spawn(wt_tx);
 
     let mut terminal = ratatui::init();
 
@@ -49,7 +54,7 @@ fn main() -> io::Result<()> {
         prev_hook(info);
     }));
 
-    let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &amsg_rx, &audio_tx, &stop);
+    let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &amsg_rx, &audio_tx, &wt_rx, &stop);
     ratatui::restore();
     debug::log("=== выход Pianzo ===");
     result
@@ -64,21 +69,26 @@ fn run(
     play_tx: &Sender<PlayRequest>,
     amsg_rx: &Receiver<AudioMsg>,
     audio_tx: &Sender<AudioRequest>,
+    wt_rx: &Receiver<Option<String>>,
     stop: &Arc<AtomicBool>,
 ) -> io::Result<()> {
     loop {
         terminal.draw(|frame| ui::draw(frame, app))?;
 
+        // Обновляем активное окно из трекера.
+        while let Ok(win) = wt_rx.try_recv() {
+            app.active_window = win;
+        }
+
         while let Ok(cmd) = hk_rx.try_recv() {
             match cmd {
-                // Старт работает только когда FOCUSED и в обычном режиме —
-                // чтобы глобальный хоткей не мешал вводу и не срабатывал,
-                // пока ты в другом окне (UNFOCUSED).
-                HotkeyCmd::Start if app.focused && app.mode == Mode::Normal => {
+                // Старт разрешён в обычном режиме; can_start_play() учитывает
+                // FOCUSED/UNFOCUSED и правила фильтрации процессов.
+                HotkeyCmd::Start if app.can_start_play() && app.mode == Mode::Normal => {
                     start_playback(app, stop, play_tx)
                 }
                 HotkeyCmd::Start => {
-                    debug::log("main: старт проигнорирован (UNFOCUSED или модальное окно)");
+                    debug::log("main: старт проигнорирован (UNFOCUSED/процесс/модальное окно)");
                 }
                 HotkeyCmd::Stop => stop_playback(app, stop),
                 HotkeyCmd::ListenError(e) => {
@@ -560,6 +570,86 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                         _ => {}
                     }
                     let _ = app.persist_config_pub();
+                }
+                KeyCode::Left | KeyCode::Esc => {
+                    app.settings_inside = false;
+                    app.settings_item = 0;
+                    app.settings_editing = false;
+                }
+                _ => {}
+            }
+        }
+        SettingsSection::Processes => {
+            // Режим ввода поиска — все клавиши идут в строку поиска.
+            if app.proc_in_search {
+                match key.code {
+                    KeyCode::Esc => app.proc_exit_search(),
+                    KeyCode::Enter => {
+                        if !app.proc_filtered.is_empty() {
+                            app.proc_add_selected();
+                        } else {
+                            app.proc_exit_search();
+                        }
+                    }
+                    KeyCode::Up => {
+                        if app.proc_dropdown_sel > 0 {
+                            app.proc_dropdown_sel -= 1;
+                        }
+                    }
+                    KeyCode::Down => {
+                        let max = app.proc_filtered.len().saturating_sub(1);
+                        if app.proc_dropdown_sel < max {
+                            app.proc_dropdown_sel += 1;
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        app.proc_search.pop();
+                        app.proc_update_filter();
+                    }
+                    KeyCode::Char(c) => {
+                        app.proc_search.push(c);
+                        app.proc_update_filter();
+                    }
+                    _ => {}
+                }
+                return;
+            }
+
+            // Обычная навигация внутри раздела.
+            let entry_count = app.process_config.entries.len();
+            let max_item = if entry_count == 0 { 1 } else { 1 + entry_count };
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.settings_item > 0 {
+                        app.settings_item -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.settings_item < max_item {
+                        app.settings_item += 1;
+                    }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => match app.settings_item {
+                    0 => {
+                        app.process_config.enabled = !app.process_config.enabled;
+                        let _ = app.persist_config_pub();
+                    }
+                    1 => app.proc_enter_search(),
+                    idx => {
+                        let entry_idx = idx - 2;
+                        app.proc_cycle_mode(entry_idx);
+                    }
+                },
+                KeyCode::Delete | KeyCode::Char('d') => {
+                    if app.settings_item >= 2 {
+                        let entry_idx = app.settings_item - 2;
+                        app.proc_remove_entry(entry_idx);
+                        // Скорректировать выбор если удалили последний элемент.
+                        let new_max = if app.process_config.entries.is_empty() { 1 } else { 1 + app.process_config.entries.len() };
+                        if app.settings_item > new_max {
+                            app.settings_item = new_max;
+                        }
+                    }
                 }
                 KeyCode::Left | KeyCode::Esc => {
                     app.settings_inside = false;
