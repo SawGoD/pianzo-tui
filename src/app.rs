@@ -11,6 +11,7 @@ use crate::notifications::NotificationConfig;
 use crate::parser::TokenSpan;
 use crate::processes::{self, ProcessConfig, ProcessEntry, ProcessMode};
 use crate::storage::{self, Bookmark};
+use crate::updater::{self, UpdateMsg};
 
 /// Текущий режим ввода TUI.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +41,19 @@ pub enum SettingsSection {
     Hotkeys,
     Notifications,
     Processes,
+    Updates,
+}
+
+/// Состояние процесса обновления.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UpdateState {
+    Idle,
+    Checking,
+    Available(String),
+    UpToDate,
+    Downloading,
+    Done,
+    Error(String),
 }
 
 impl SettingsSection {
@@ -49,6 +63,7 @@ impl SettingsSection {
             SettingsSection::Hotkeys,
             SettingsSection::Notifications,
             SettingsSection::Processes,
+            SettingsSection::Updates,
         ]
     }
 
@@ -58,6 +73,7 @@ impl SettingsSection {
             SettingsSection::Hotkeys => "Хоткеи",
             SettingsSection::Notifications => "Уведомления",
             SettingsSection::Processes => "Процессы",
+            SettingsSection::Updates => "Обновления",
         }
     }
 }
@@ -169,10 +185,17 @@ pub struct App {
     pub play_event: usize,
 
     pub should_quit: bool,
+
+    /// Состояние автообновления.
+    pub update_state: UpdateState,
+    /// Sender для канала обновлений (используется для повторных проверок).
+    pub upd_tx: std::sync::mpsc::Sender<UpdateMsg>,
+    /// Флаг — запустить обновление в следующем тике main loop.
+    pub trigger_update: bool,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(upd_tx: std::sync::mpsc::Sender<UpdateMsg>) -> Self {
         let bookmarks = storage::load_bookmarks();
         let (config, volume, notif_config, general, process_config) = storage::load_config();
         let mut list_state = ListState::default();
@@ -221,6 +244,9 @@ impl App {
             spans: Vec::new(),
             play_event: 0,
             should_quit: false,
+            update_state: UpdateState::Checking,
+            upd_tx,
+            trigger_update: false,
         };
 
         if !app.bookmarks.is_empty() {

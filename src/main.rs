@@ -9,6 +9,7 @@ mod player;
 mod processes;
 mod storage;
 mod ui;
+mod updater;
 mod window_tracker;
 
 use std::io;
@@ -19,10 +20,11 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use app::{App, EditFocus, Mode, SettingsSection};
+use app::{App, EditFocus, Mode, SettingsSection, UpdateState};
 use audio::{AudioMsg, AudioRequest};
 use hotkeys::HotkeyCmd;
 use player::{PlayRequest, PlayerMsg};
+use updater::UpdateMsg;
 
 fn main() -> io::Result<()> {
     let (hk_tx, hk_rx) = mpsc::channel::<HotkeyCmd>();
@@ -31,9 +33,10 @@ fn main() -> io::Result<()> {
     let (audio_tx, audio_rx) = mpsc::channel::<AudioRequest>();
     let (amsg_tx, amsg_rx) = mpsc::channel::<AudioMsg>();
     let (wt_tx, wt_rx) = mpsc::channel::<Option<String>>();
+    let (upd_tx, upd_rx) = mpsc::channel::<UpdateMsg>();
     let stop = Arc::new(AtomicBool::new(false));
 
-    let mut app = App::new();
+    let mut app = App::new(upd_tx.clone());
     debug::log("=== запуск Pianzo ===");
 
     // Слушатель глобальной клавиатуры с общим конфигом хоткеев.
@@ -44,6 +47,8 @@ fn main() -> io::Result<()> {
     audio::spawn(audio_rx, Arc::clone(&stop), amsg_tx, Arc::clone(&app.volume));
     // Трекер активного окна.
     window_tracker::spawn(wt_tx);
+    // Фоновая проверка обновлений.
+    updater::spawn_check(upd_tx.clone());
 
     let mut terminal = ratatui::init();
 
@@ -54,7 +59,7 @@ fn main() -> io::Result<()> {
         prev_hook(info);
     }));
 
-    let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &amsg_rx, &audio_tx, &wt_rx, &stop);
+    let result = run(&mut terminal, &mut app, &hk_rx, &pl_rx, &play_tx, &amsg_rx, &audio_tx, &wt_rx, &upd_rx, upd_tx, &stop);
     ratatui::restore();
     debug::log("=== выход Pianzo ===");
     result
@@ -70,6 +75,8 @@ fn run(
     amsg_rx: &Receiver<AudioMsg>,
     audio_tx: &Sender<AudioRequest>,
     wt_rx: &Receiver<Option<String>>,
+    upd_rx: &Receiver<UpdateMsg>,
+    upd_tx: Sender<UpdateMsg>,
     stop: &Arc<AtomicBool>,
 ) -> io::Result<()> {
     loop {
@@ -78,6 +85,37 @@ fn run(
         // Обновляем активное окно из трекера.
         while let Ok(win) = wt_rx.try_recv() {
             app.active_window = win;
+        }
+
+        // Сообщения от updater.
+        while let Ok(msg) = upd_rx.try_recv() {
+            match msg {
+                UpdateMsg::Available(v) => {
+                    app.status = format!("Доступно обновление v{v} — зайди в Настройки → Обновления");
+                    app.update_state = UpdateState::Available(v);
+                }
+                UpdateMsg::UpToDate => {
+                    app.update_state = UpdateState::UpToDate;
+                }
+                UpdateMsg::Downloading => {
+                    app.update_state = UpdateState::Downloading;
+                    app.status = "Скачивание обновления…".to_string();
+                }
+                UpdateMsg::Done => {
+                    app.update_state = UpdateState::Done;
+                    app.status = "Обновление установлено. Перезапусти приложение.".to_string();
+                }
+                UpdateMsg::Error(e) => {
+                    app.update_state = UpdateState::Error(e.clone());
+                    app.status = format!("Ошибка обновления: {e}");
+                }
+            }
+        }
+
+        // Запуск обновления по флагу (чтобы не передавать upd_tx в handle_settings).
+        if app.trigger_update {
+            app.trigger_update = false;
+            updater::spawn_update(upd_tx.clone());
         }
 
         while let Ok(cmd) = hk_rx.try_recv() {
@@ -669,6 +707,36 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                     app.settings_inside = false;
                     app.settings_item = 0;
                     app.settings_editing = false;
+                }
+                _ => {}
+            }
+        }
+        SettingsSection::Updates => {
+            let has_update = matches!(app.update_state, UpdateState::Available(_));
+            let max_item = if has_update { 1 } else { 0 };
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.settings_item > 0 { app.settings_item -= 1; }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.settings_item < max_item { app.settings_item += 1; }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => match app.settings_item {
+                    0 => {
+                        // Повторная проверка.
+                        app.update_state = UpdateState::Checking;
+                        updater::spawn_check(app.upd_tx.clone());
+                    }
+                    1 => {
+                        // Обновить.
+                        app.update_state = UpdateState::Downloading;
+                        app.trigger_update = true;
+                    }
+                    _ => {}
+                },
+                KeyCode::Left | KeyCode::Esc => {
+                    app.settings_inside = false;
+                    app.settings_item = 0;
                 }
                 _ => {}
             }

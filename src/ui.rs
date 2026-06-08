@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, EditFocus, Mode, SettingsSection};
+use crate::app::{App, EditFocus, Mode, SettingsSection, UpdateState};
 use crate::parser::TokenSpan;
 
 /// Цвет нот (превью и непроигранные в караоке) — мягкий бежевый.
@@ -294,8 +294,10 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Правая часть: активное окно (только когда включена фильтрация процессов).
-    let win_indicator: Option<(String, Color)> = if app.process_config.enabled {
+    // Правая часть: обновление (приоритет) или активное окно.
+    let win_indicator: Option<(String, Color)> = if let UpdateState::Available(v) = &app.update_state {
+        Some((format!("↑ v{v}"), Color::Green))
+    } else if app.process_config.enabled {
         let win_name = app.active_window.as_deref().unwrap_or("—");
         let color = match app.process_config.window_mode(win_name) {
             Some(crate::processes::ProcessMode::Track) => Color::Green,
@@ -749,6 +751,26 @@ fn settings_section_preview(app: &App, section: SettingsSection) -> Vec<Line<'st
                 ]),
             ]
         }
+        SettingsSection::Updates => {
+            let (state_str, state_color) = match &app.update_state {
+                UpdateState::Idle | UpdateState::Checking => ("проверяется…".to_string(), Color::DarkGray),
+                UpdateState::Available(v) => (v.clone(), Color::Green),
+                UpdateState::UpToDate => ("актуальна".to_string(), Color::Cyan),
+                UpdateState::Downloading => ("скачивание…".to_string(), Color::Yellow),
+                UpdateState::Done => ("перезапусти".to_string(), Color::Green),
+                UpdateState::Error(_) => ("ошибка".to_string(), Color::Red),
+            };
+            vec![
+                Line::from(vec![
+                    Span::styled("Версия:    ", Style::default().fg(Color::Gray)),
+                    Span::styled(env!("CARGO_PKG_VERSION"), Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Доступна:  ", Style::default().fg(Color::Gray)),
+                    Span::styled(state_str, Style::default().fg(state_color).add_modifier(Modifier::BOLD)),
+                ]),
+            ]
+        }
     }
 }
 
@@ -985,7 +1007,90 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
         SettingsSection::Processes => {
             draw_settings_processes(frame, app, cols[0], desc_inner, rows[3]);
         }
+        SettingsSection::Updates => {
+            draw_settings_updates(frame, app, cols[0], desc_inner, rows[3]);
+        }
     }
+}
+
+fn draw_settings_updates(frame: &mut Frame, app: &App, left: Rect, desc: Rect, hint_area: Rect) {
+    let current = env!("CARGO_PKG_VERSION");
+    let sel = app.settings_item;
+    let has_update = matches!(app.update_state, UpdateState::Available(_));
+    let is_downloading = matches!(app.update_state, UpdateState::Downloading);
+
+    let (status_line, status_color) = match &app.update_state {
+        UpdateState::Idle | UpdateState::Checking =>
+            ("Проверяется…".to_string(), Color::DarkGray),
+        UpdateState::Available(v) =>
+            (format!("Доступна v{v}!"), Color::Green),
+        UpdateState::UpToDate =>
+            ("Версия актуальна".to_string(), Color::Cyan),
+        UpdateState::Downloading =>
+            ("Скачивание…".to_string(), Color::Yellow),
+        UpdateState::Done =>
+            ("Установлено. Перезапусти приложение.".to_string(), Color::Green),
+        UpdateState::Error(e) =>
+            (format!("Ошибка: {e}"), Color::Red),
+    };
+
+    let btn = |label: &'static str, idx: usize, active: bool| -> Line<'static> {
+        let selected = sel == idx;
+        let marker = if selected { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+        let style = if !active {
+            Style::default().fg(Color::DarkGray)
+        } else if selected {
+            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        Line::from(vec![marker, Span::styled(label, style)])
+    };
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(vec![
+            Span::styled("Текущая версия:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("v{current}"), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("Статус:          ", Style::default().fg(Color::DarkGray)),
+            Span::styled(status_line, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        btn("Проверить обновления", 0, !is_downloading),
+    ];
+    if has_update {
+        if let UpdateState::Available(v) = &app.update_state {
+            let label = format!("Обновить до v{v}");
+            let selected = sel == 1;
+            let marker = if selected { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+            let style = if selected {
+                Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Green)
+            };
+            lines.push(Line::from(vec![marker, Span::styled(label, style)]));
+        }
+    }
+    frame.render_widget(Paragraph::new(lines), left);
+
+    let desc_text = match sel {
+        0 => "Проверяет GitHub Releases на наличие новой версии.\n\nТребует интернет-соединения. git не нужен.",
+        1 => "Скачивает и устанавливает новую версию.\n\nПосле установки необходимо перезапустить приложение.",
+        _ => "",
+    };
+    frame.render_widget(
+        Paragraph::new(desc_text)
+            .style(Style::default().fg(Color::DarkGray))
+            .wrap(Wrap { trim: false }),
+        desc,
+    );
+
+    let hint = Line::from(Span::styled(
+        "↑↓ выбор   Enter выполнить   ←/Esc назад",
+        Style::default().fg(Color::DarkGray),
+    ));
+    frame.render_widget(Paragraph::new(hint), hint_area);
 }
 
 fn draw_settings_processes(
