@@ -20,23 +20,25 @@ pub fn get_active_process_name() -> Option<String> {
     use std::ffi::CStr;
     use std::os::raw::c_char;
     unsafe {
-        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
-        if workspace.is_null() {
-            return None;
-        }
-        let app: *mut Object = msg_send![workspace, frontmostApplication];
-        if app.is_null() {
-            return None;
-        }
-        let name: *mut Object = msg_send![app, localizedName];
-        if name.is_null() {
-            return None;
-        }
-        let bytes: *const c_char = msg_send![name, UTF8String];
-        if bytes.is_null() {
-            return None;
-        }
-        Some(CStr::from_ptr(bytes).to_string_lossy().into_owned())
+        // Фоновый поток не имеет авторелиз-пула — создаём свой на каждый вызов,
+        // иначе NSString от localizedName авторелизнется в никуда.
+        let pool: *mut Object = msg_send![class!(NSAutoreleasePool), new];
+
+        let result = (|| {
+            let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
+            if workspace.is_null() { return None; }
+            let app: *mut Object = msg_send![workspace, frontmostApplication];
+            if app.is_null() { return None; }
+            let name: *mut Object = msg_send![app, localizedName];
+            if name.is_null() { return None; }
+            let bytes: *const c_char = msg_send![name, UTF8String];
+            if bytes.is_null() { return None; }
+            // Копируем в String пока pool ещё жив.
+            Some(CStr::from_ptr(bytes).to_string_lossy().into_owned())
+        })();
+
+        let () = msg_send![pool, drain];
+        result
     }
 }
 
