@@ -440,6 +440,15 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_settings(app: &mut App, key: KeyEvent) {
+    // q закрывает настройки из любой глубины.
+    if key.code == KeyCode::Char('q') && !app.proc_in_search {
+        app.mode = Mode::Normal;
+        app.settings_inside = false;
+        app.settings_item = 0;
+        app.settings_editing = false;
+        return;
+    }
+
     let sections = SettingsSection::all();
 
     if !app.settings_inside {
@@ -458,7 +467,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
             KeyCode::Right | KeyCode::Enter => {
                 app.settings_inside = true;
             }
-            KeyCode::Esc => app.mode = Mode::Normal,
+            KeyCode::Esc | KeyCode::Char('q') => app.mode = Mode::Normal,
             _ => {}
         }
         return;
