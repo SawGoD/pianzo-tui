@@ -3,12 +3,26 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::storage::pianzo_dir;
 
+static ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_enabled(on: bool) {
+    ENABLED.store(on, Ordering::Relaxed);
+}
+
+pub fn is_enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
 /// Дописывает строку в лог-файл (молча игнорирует ошибки записи).
 pub fn log(msg: &str) {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
     let dir = pianzo_dir();
     let _ = fs::create_dir_all(&dir);
     let path = dir.join("pianzo-tui.log");

@@ -694,6 +694,13 @@ fn settings_section_preview(app: &App, section: SettingsSection) -> Vec<Line<'st
                     Span::styled("Пауза:    ", Style::default().fg(Color::Gray)),
                     Span::styled(format!("{} сек", g.countdown_secs), Style::default().fg(Color::Cyan)),
                 ]),
+                Line::from(vec![
+                    Span::styled("Логи:     ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        if g.logging_enabled { "вкл" } else { "выкл" },
+                        if g.logging_enabled { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::DarkGray) },
+                    ),
+                ]),
             ]
         }
         SettingsSection::Hotkeys => {
@@ -825,12 +832,27 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 ])
             };
 
+            let log_toggle = if g.logging_enabled {
+                Span::styled(" ВКЛ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled(" ВЫКЛ", Style::default().fg(Color::DarkGray))
+            };
+            let log_marker = if sel == 3 { Span::styled("▶ ", Style::default().fg(Color::Cyan)) } else { Span::raw("  ") };
+            let log_label_style = if sel == 3 { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::White) };
+            let log_row = Line::from(vec![
+                log_marker,
+                Span::styled(format!("{:<T_PAD$}", "Ведение логов"), log_label_style),
+                log_toggle,
+            ]);
+
             let content = vec![
                 Line::from(Span::styled("  Задержка по умолчанию", Style::default().fg(Color::DarkGray))),
                 child_row("Между клавишами", format!("{:.3} с", g.default_keys),  0),
                 child_row("Между строками",  format!("{:.3} с", g.default_lines), 1),
                 Line::from(""),
                 top_row("Пауза перед воспроизведением", format!("{} сек", g.countdown_secs), 2),
+                Line::from(""),
+                log_row,
             ];
             frame.render_widget(Paragraph::new(content), cols[0]);
 
@@ -838,6 +860,7 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 0 => "Задержка между нажатиями клавиш при создании новой мелодии.",
                 1 => "Задержка между строками нот при создании новой мелодии.",
                 2 => "Через сколько секунд начнётся воспроизведение после нажатия хоткея.",
+                3 => "Записывает отладочную информацию в файл ~/Documents/Pianzo/pianzo-tui.log. Отключай когда не нужна диагностика.",
                 _ => "",
             };
             frame.render_widget(
@@ -854,7 +877,7 @@ fn draw_settings_section(frame: &mut Frame, app: &App, area: Rect) {
                 ))
             } else {
                 Line::from(Span::styled(
-                    "↑↓ выбор   Enter/→ изменить   ←/Esc назад",
+                    "↑↓ выбор   Enter/→ изменить   Enter/Пробел (логи)   ←/Esc назад",
                     Style::default().fg(Color::DarkGray),
                 ))
             };

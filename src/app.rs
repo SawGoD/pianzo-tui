@@ -227,6 +227,7 @@ impl App {
             app.load_bookmark(0);
         }
         app.status = app.ready_hint();
+        crate::debug::set_enabled(app.general.logging_enabled);
         app
     }
 

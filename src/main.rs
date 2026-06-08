@@ -469,7 +469,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
     match section {
         SettingsSection::General => {
             if app.settings_editing {
-                // Режим редактирования значения.
+                // Режим редактирования числовых значений (items 0–2).
                 match key.code {
                     KeyCode::Left => {
                         match app.settings_item {
@@ -501,10 +501,15 @@ fn handle_settings(app: &mut App, key: KeyEvent) {
                         if app.settings_item > 0 { app.settings_item -= 1; }
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if app.settings_item < 2 { app.settings_item += 1; }
+                        if app.settings_item < 3 { app.settings_item += 1; }
                     }
-                    KeyCode::Enter | KeyCode::Right => {
-                        app.settings_editing = true;
+                    KeyCode::Enter | KeyCode::Char(' ') if app.settings_item == 3 => {
+                        app.general.logging_enabled = !app.general.logging_enabled;
+                        crate::debug::set_enabled(app.general.logging_enabled);
+                        let _ = app.persist_config_pub();
+                    }
+                    KeyCode::Right | KeyCode::Enter => {
+                        if app.settings_item < 3 { app.settings_editing = true; }
                     }
                     KeyCode::Left | KeyCode::Esc => {
                         app.settings_inside = false;

@@ -8,6 +8,8 @@ pub struct GeneralConfig {
     pub default_lines: f64,
     #[serde(default = "default_countdown")]
     pub countdown_secs: u64,
+    #[serde(default)]
+    pub logging_enabled: bool,
 }
 
 fn default_delay() -> f64 { 0.110 }
@@ -15,7 +17,7 @@ fn default_countdown() -> u64 { 3 }
 
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { default_keys: 0.110, default_lines: 0.110, countdown_secs: 3 }
+        Self { default_keys: 0.110, default_lines: 0.110, countdown_secs: 3, logging_enabled: false }
     }
 }
 
