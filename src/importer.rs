@@ -81,51 +81,39 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
     Ok(ImportResult { name, notes, between_keys, between_lines, transposition })
 }
 
-/// Вычисляет задержки из доступных источников:
-/// - TEMPO (BPM): `60 / BPM`
-/// - TARGET LENGTH: `total × HUMAN_FACTOR / tokens`
-/// Если оба есть — берём среднее арифметическое.
+/// Вычисляет задержки.
+///
+/// TARGET LENGTH / tokens — основная метрика: делит реальное время на число нажатий.
+/// TEMPO (BPM) — только фоллбэк: музыкальный бит ≠ нота (в одном бите может быть много нот).
 fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
     const HUMAN_FACTOR: f64 = 0.65;
     const MIN_DELAY: f64 = 0.05;
     const MAX_DELAY: f64 = 2.0;
 
-    let tempo_k = extract_tempo(html).map(|bpm| {
-        let k = 60.0 / bpm as f64;
-        crate::debug::log(&format!("[importer] TEMPO={bpm} BPM => {k:.3}s"));
-        k
-    });
-
     let num_tokens: f64 = notes.lines()
         .map(|l| l.split_whitespace().count() as f64)
         .sum();
 
-    let length_k = extract_target_length(html).and_then(|total| {
-        if num_tokens < 1.0 { return None; }
-        let k = (total * HUMAN_FACTOR) / num_tokens;
-        crate::debug::log(&format!(
-            "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} factor={HUMAN_FACTOR} => {k:.3}s"
-        ));
-        Some(k)
-    });
-
-    let k = match (tempo_k, length_k) {
-        (Some(a), Some(b)) => {
-            let avg = (a + b) / 2.0;
-            crate::debug::log(&format!("[importer] avg({a:.3}, {b:.3}) => {avg:.3}s"));
-            avg
+    // Приоритет 1: TARGET LENGTH / tokens
+    if let Some(total) = extract_target_length(html) {
+        if num_tokens >= 1.0 {
+            let k = ((total * HUMAN_FACTOR) / num_tokens).clamp(MIN_DELAY, MAX_DELAY);
+            crate::debug::log(&format!(
+                "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} factor={HUMAN_FACTOR} => {k:.3}s"
+            ));
+            return (Some(k), Some(k));
         }
-        (Some(a), None) => a,
-        (None, Some(b)) => b,
-        (None, None) => {
-            crate::debug::log("[importer] no timing data, using app defaults");
-            return (None, None);
-        }
-    };
+    }
 
-    let k = k.clamp(MIN_DELAY, MAX_DELAY);
-    crate::debug::log(&format!("[importer] final between_keys={k:.3}s"));
-    (Some(k), Some(k))
+    // Фоллбэк: TEMPO BPM
+    if let Some(bpm) = extract_tempo(html) {
+        let k = (60.0 / bpm as f64).clamp(MIN_DELAY, MAX_DELAY);
+        crate::debug::log(&format!("[importer] fallback TEMPO={bpm} BPM => {k:.3}s"));
+        return (Some(k), Some(k));
+    }
+
+    crate::debug::log("[importer] no timing data, using app defaults");
+    (None, None)
 }
 
 /// Извлекает TEMPO в BPM из `<span id="tempo">136</span>`.
