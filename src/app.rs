@@ -640,14 +640,14 @@ impl App {
                 let idx = self.bookmarks.iter().position(|b| b.name == result.name).unwrap_or(0);
                 self.list_state.select(Some(idx));
                 self.load_bookmark(idx);
+                let mut status = format!("Импортировано: {}", result.name);
                 if result.between_keys.is_some() {
-                    self.status = format!(
-                        "Импортировано: {} (задержки: {:.3}s / {:.3}s)",
-                        result.name, between_keys, between_lines
-                    );
-                } else {
-                    self.status = format!("Импортировано: {}", result.name);
+                    status += &format!(" (задержки: {between_keys:.3}s)");
                 }
+                if let Some(t) = result.transposition {
+                    status += &format!(" [транспозиция: {t:+}]");
+                }
+                self.status = status;
             }
             Err(e) => {
                 self.import_error = Some(e.to_string());

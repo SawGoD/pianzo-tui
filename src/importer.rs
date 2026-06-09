@@ -24,6 +24,8 @@ pub struct ImportResult {
     pub between_keys: Option<f64>,
     /// Рассчитанная задержка между строками (None — использовать дефолт приложения).
     pub between_lines: Option<f64>,
+    /// Транспозиция в полутонах (информационно, для будущего использования).
+    pub transposition: Option<i32>,
 }
 
 /// Импортирует мелодию из URL. Определяет сайт и вызывает нужный парсер.
@@ -58,8 +60,9 @@ fn fetch(url: &str) -> Result<String, ImportError> {
 
 /// Парсит страницу virtualpiano.net/music-sheet/...
 ///
-/// Ноты — в `<p>` внутри `<div id="sheet-content">`, строки разделены `||`.
-/// Задержки рассчитываются из TARGET LENGTH и количества токенов/строк.
+/// Ноты — в `<p>` внутри `<div id="sheet-content">`.
+/// Формат: `||` = разделитель строк, `|` = разделитель битов внутри строки (→ пробел).
+/// Задержки: TEMPO (BPM) если есть, иначе TARGET LENGTH с поправкой 0.5.
 fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
     crate::debug::log("[importer] parse_virtualpiano: start");
     let name = extract_title_virtualpiano(html);
@@ -68,24 +71,36 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
         .ok_or_else(|| ImportError::Parse("Ноты не найдены на странице".to_string()))?;
     crate::debug::log(&format!("[importer] notes length: {} chars", notes.len()));
 
+    let transposition = extract_transposition(html);
+    if let Some(t) = transposition {
+        crate::debug::log(&format!("[importer] transposition: {t}"));
+    }
+
     let (between_keys, between_lines) = calc_delays(&notes, html);
 
-    Ok(ImportResult { name, notes, between_keys, between_lines })
+    Ok(ImportResult { name, notes, between_keys, between_lines, transposition })
 }
 
-/// Вычисляет задержки на основе TARGET LENGTH и числа токенов.
+/// Вычисляет задержки.
 ///
-/// `||` в VP — визуальный разделитель, не музыкальная пауза,
-/// поэтому between_lines = between_keys.
-/// TARGET LENGTH рассчитан на живого игрока, автомат играет вдвое быстрее,
-/// поэтому применяем коэффициент HUMAN_FACTOR = 0.5.
+/// Приоритеты:
+/// 1. TEMPO (BPM) — `between_keys = 60 / BPM`
+/// 2. TARGET LENGTH с поправкой HUMAN_FACTOR=0.5 (человек играет медленнее)
 fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
     const HUMAN_FACTOR: f64 = 0.5;
     const MIN_DELAY: f64 = 0.05;
     const MAX_DELAY: f64 = 2.0;
 
+    // Приоритет 1: TEMPO
+    if let Some(bpm) = extract_tempo(html) {
+        let k = (60.0 / bpm as f64).clamp(MIN_DELAY, MAX_DELAY);
+        crate::debug::log(&format!("[importer] TEMPO={bpm} BPM => between_keys={k:.3}s"));
+        return (Some(k), Some(k));
+    }
+
+    // Приоритет 2: TARGET LENGTH
     let Some(total) = extract_target_length(html) else {
-        crate::debug::log("[importer] TARGET LENGTH not found, using app defaults");
+        crate::debug::log("[importer] no TEMPO and no TARGET LENGTH, using app defaults");
         return (None, None);
     };
 
@@ -98,12 +113,33 @@ fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
     }
 
     let k = ((total * HUMAN_FACTOR) / num_tokens).clamp(MIN_DELAY, MAX_DELAY);
-
     crate::debug::log(&format!(
         "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} factor={HUMAN_FACTOR} => between_keys={k:.3}s"
     ));
 
     (Some(k), Some(k))
+}
+
+/// Извлекает TEMPO в BPM из `<span id="tempo">136</span>`.
+fn extract_tempo(html: &str) -> Option<u32> {
+    let marker = "id=\"tempo\">";
+    let pos = html.find(marker)?;
+    let rest = &html[pos + marker.len()..];
+    let end = rest.find('<')?;
+    let bpm: u32 = rest[..end].trim().parse().ok()?;
+    crate::debug::log(&format!("[importer] TEMPO raw='{}'", rest[..end].trim()));
+    Some(bpm)
+}
+
+/// Извлекает транспозицию из `<span>-5</span>` после `trans-icon`.
+fn extract_transposition(html: &str) -> Option<i32> {
+    let marker = "trans-icon\">";
+    let pos = html.find(marker)?;
+    let rest = &html[pos + marker.len()..];
+    // пропустить до следующего <span>
+    let span_start = rest.find("<span>")? + "<span>".len();
+    let span_end = rest[span_start..].find("</span>")?;
+    rest[span_start..span_start + span_end].trim().parse().ok()
 }
 
 /// Извлекает TARGET LENGTH в секундах из `<span id="target-length">M:SS</span>`.
@@ -152,9 +188,15 @@ fn extract_notes_virtualpiano(html: &str) -> Option<String> {
     crate::debug::log(&format!("[importer] raw notes preview: {:.120}", raw));
 
     let decoded = html_decode(&strip_tags(raw));
-    let notes: String = decoded
-        .split("||")
-        .map(|line| line.trim())
+
+    // `||` — разделитель строк (тактов), `|` — разделитель битов внутри строки.
+    // Заменяем `||` → \n, затем `|` → пробел.
+    // Порядок важен: сначала двойной, потом одинарный.
+    let normalized = decoded.replace("||", "\n").replace('|', " ");
+
+    let notes: String = normalized
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
