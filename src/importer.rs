@@ -73,27 +73,23 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
     Ok(ImportResult { name, notes, between_keys, between_lines })
 }
 
-/// Вычисляет задержки на основе TARGET LENGTH и числа токенов/строк.
+/// Вычисляет задержки на основе TARGET LENGTH и числа токенов.
 ///
-/// Модель: total = (tokens - lines) × k + lines × (k × LINE_RATIO)
-///   => k = total / (tokens - lines + lines × LINE_RATIO)
-///
-/// LINE_RATIO = 1.5 — строковая пауза длиннее межклавишной в 1.5 раза.
+/// `||` в VP — визуальный разделитель, не музыкальная пауза,
+/// поэтому between_lines = between_keys.
+/// TARGET LENGTH рассчитан на живого игрока, автомат играет вдвое быстрее,
+/// поэтому применяем коэффициент HUMAN_FACTOR = 0.5.
 fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
-    const LINE_RATIO: f64 = 1.5;
+    const HUMAN_FACTOR: f64 = 0.5;
     const MIN_DELAY: f64 = 0.05;
     const MAX_DELAY: f64 = 2.0;
 
-    let target_secs = extract_target_length(html);
-    let Some(total) = target_secs else {
+    let Some(total) = extract_target_length(html) else {
         crate::debug::log("[importer] TARGET LENGTH not found, using app defaults");
         return (None, None);
     };
 
-    // Считаем токены и строки по тем же правилам, что и parser.rs
-    let lines: Vec<&str> = notes.lines().collect();
-    let num_lines = lines.len() as f64;
-    let num_tokens: f64 = lines.iter()
+    let num_tokens: f64 = notes.lines()
         .map(|l| l.split_whitespace().count() as f64)
         .sum();
 
@@ -101,19 +97,13 @@ fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
         return (None, None);
     }
 
-    let denominator = (num_tokens - num_lines) + num_lines * LINE_RATIO;
-    if denominator <= 0.0 {
-        return (None, None);
-    }
-
-    let k = (total / denominator).clamp(MIN_DELAY, MAX_DELAY);
-    let l = (k * LINE_RATIO).clamp(MIN_DELAY, MAX_DELAY);
+    let k = ((total * HUMAN_FACTOR) / num_tokens).clamp(MIN_DELAY, MAX_DELAY);
 
     crate::debug::log(&format!(
-        "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} lines={num_lines} => between_keys={k:.3}s between_lines={l:.3}s"
+        "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} factor={HUMAN_FACTOR} => between_keys={k:.3}s"
     ));
 
-    (Some(k), Some(l))
+    (Some(k), Some(k))
 }
 
 /// Извлекает TARGET LENGTH в секундах из `<span id="target-length">M:SS</span>`.
