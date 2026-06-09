@@ -641,6 +641,9 @@ impl App {
             if let Some(k) = bk { self.bookmarks[idx].between_keys = k; }
             if let Some(l) = bl { self.bookmarks[idx].between_lines = l; }
         }
+        if let Some(meta) = self.bookmarks[idx].import_meta.as_mut() {
+            meta.validated = true;
+        }
 
         let bookmark = self.bookmarks[idx].clone();
         match storage::save_bookmark(&bookmark) {

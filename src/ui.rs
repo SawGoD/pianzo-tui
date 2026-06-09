@@ -181,7 +181,9 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
     };
     let note_count = display_notes.split_whitespace().count();
     let has_import_meta = !playing
-        && app.selected_bookmark().and_then(|b| b.import_meta.as_ref()).is_some();
+        && app.selected_bookmark()
+            .and_then(|b| b.import_meta.as_ref())
+            .is_some_and(|m| !m.validated);
     let title = if has_import_meta {
         format!(" Ноты ({note_count}) — [e] правка  [v] валидация ")
     } else {

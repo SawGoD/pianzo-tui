@@ -33,6 +33,9 @@ pub struct ImportMeta {
     pub target_length_secs: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transposition: Option<i32>,
+    /// true — ноты уже прошли валидацию пробелами.
+    #[serde(default)]
+    pub validated: bool,
 }
 
 /// Базовый каталог документов (`~/Documents`).

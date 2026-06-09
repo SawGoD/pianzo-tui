@@ -82,6 +82,7 @@ fn parse_virtualpiano(html: &str, url: &str) -> Result<ImportResult, ImportError
         tempo_bpm,
         target_length_secs,
         transposition,
+        validated: false,
     };
 
     Ok(ImportResult { name, notes, between_keys, between_lines, meta })
