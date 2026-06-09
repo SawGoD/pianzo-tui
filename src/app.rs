@@ -618,6 +618,28 @@ impl App {
         self.status = format!("Громкость: {}%", self.volume_pct());
     }
 
+    /// Валидирует ноты наведённой закладки: добавляет пробелы между символами
+    /// вне скобок `[...]`. Сохраняет изменённую закладку на диск.
+    pub fn validate_hovered(&mut self) {
+        let Some(idx) = self.selected() else { return };
+        let original = self.bookmarks[idx].notes.clone();
+        let validated = validate_notes(&original);
+        if validated == original {
+            self.status = "Ноты уже корректны, изменений нет".to_string();
+            return;
+        }
+        self.bookmarks[idx].notes = validated;
+        let bookmark = self.bookmarks[idx].clone();
+        match storage::save_bookmark(&bookmark) {
+            Ok(_) => self.status = format!("Валидировано: {}", bookmark.name),
+            Err(e) => self.status = format!("Ошибка сохранения: {e}"),
+        }
+        // Если это заряженная мелодия — обновить notes
+        if self.current_name.as_deref() == Some(&bookmark.name) {
+            self.notes = bookmark.notes;
+        }
+    }
+
     /// Запускает импорт мелодии по URL. Блокирующий (HTTP-запрос в main-потоке).
     pub fn import_from_url(&mut self, url: &str) {
         self.import_error = None;
@@ -656,4 +678,31 @@ impl App {
         }
         self.mode = Mode::Normal;
     }
+}
+
+/// Расставляет пробелы между символами вне `[...]`.
+/// `ipasap[sk]ao` → `i p a s a p [sk] a o`
+pub fn validate_notes(notes: &str) -> String {
+    notes.lines().map(|line| validate_line(line)).collect::<Vec<_>>().join("\n")
+}
+
+fn validate_line(line: &str) -> String {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '[' {
+            // собираем аккорд до ']'
+            let mut chord = String::from('[');
+            for inner in chars.by_ref() {
+                chord.push(inner);
+                if inner == ']' { break; }
+            }
+            tokens.push(chord);
+        } else if c == ' ' {
+            // уже есть пробел — пропускаем, не дублируем
+        } else {
+            tokens.push(c.to_string());
+        }
+    }
+    tokens.join(" ")
 }

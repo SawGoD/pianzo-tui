@@ -3,6 +3,7 @@ mod audio;
 mod debug;
 mod general;
 mod hotkeys;
+mod importer;
 mod notifications;
 mod parser;
 mod player;
@@ -388,6 +389,7 @@ fn handle_key(
         Mode::SaveBookmark => handle_save_input(app, key),
         Mode::ConfirmDelete => handle_confirm_delete(app, key),
         Mode::Settings => handle_settings(app, key),
+        Mode::ImportUrl => handle_import_url(app, key),
         Mode::Edit | Mode::CaptureStart | Mode::CaptureStop => {}  // обрабатываются отдельно
     }
 }
@@ -412,6 +414,11 @@ fn handle_normal(
             app.input.clear();
             app.mode = Mode::AddName;
         }
+        KeyCode::Char('A') => {
+            app.input.clear();
+            app.import_error = None;
+            app.mode = Mode::ImportUrl;
+        }
         KeyCode::Char('e') => app.begin_edit(),
         KeyCode::Char('s') => {
             app.settings_selected = 0;
@@ -425,6 +432,7 @@ fn handle_normal(
                 .unwrap_or_default();
             app.mode = Mode::SaveBookmark;
         }
+        KeyCode::Char('v') if app.selected().is_some() => app.validate_hovered(),
         KeyCode::Char('d') if app.selected().is_some() => app.mode = Mode::ConfirmDelete,
         KeyCode::Char('p') => start_playback(app, stop, play_tx),
         KeyCode::Char('t') | KeyCode::Char('T') => start_audio(app, stop, audio_tx),
@@ -446,6 +454,23 @@ fn handle_add_name(app: &mut App, key: KeyEvent) {
             app.begin_create(name); // переключит режим на Edit
         }
         KeyCode::Esc => app.mode = Mode::Normal,
+        _ => {}
+    }
+}
+
+fn handle_import_url(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char(c) => app.input.push(c),
+        KeyCode::Backspace => { app.input.pop(); }
+        KeyCode::Enter => {
+            let url = app.input.clone();
+            app.status = "Загрузка…".to_string();
+            app.import_from_url(&url);
+        }
+        KeyCode::Esc => {
+            app.mode = Mode::Normal;
+            app.import_error = None;
+        }
         _ => {}
     }
 }
