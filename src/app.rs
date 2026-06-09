@@ -400,6 +400,7 @@ impl App {
             notes: notes.clone(),
             between_keys: bk,
             between_lines: bl,
+            import_meta: None,
         };
         if let Err(e) = storage::save_bookmark(&bookmark) {
             self.status = format!("Ошибка сохранения: {e}");
@@ -629,14 +630,30 @@ impl App {
             return;
         }
         self.bookmarks[idx].notes = validated;
+
+        // Пересчитываем задержки по метаданным импорта с новым числом токенов
+        if let Some(meta) = &self.bookmarks[idx].import_meta.clone() {
+            let (bk, bl) = importer::calc_delays_from(
+                &self.bookmarks[idx].notes,
+                meta.tempo_bpm,
+                meta.target_length_secs,
+            );
+            if let Some(k) = bk { self.bookmarks[idx].between_keys = k; }
+            if let Some(l) = bl { self.bookmarks[idx].between_lines = l; }
+        }
+
         let bookmark = self.bookmarks[idx].clone();
         match storage::save_bookmark(&bookmark) {
-            Ok(_) => self.status = format!("Валидировано: {}", bookmark.name),
+            Ok(_) => self.status = format!(
+                "Валидировано: {} (задержки: {:.3}s)",
+                bookmark.name, bookmark.between_keys
+            ),
             Err(e) => self.status = format!("Ошибка сохранения: {e}"),
         }
-        // Если это заряженная мелодия — обновить notes
         if self.current_name.as_deref() == Some(&bookmark.name) {
-            self.notes = bookmark.notes;
+            self.notes = bookmark.notes.clone();
+            self.between_keys = bookmark.between_keys;
+            self.between_lines = bookmark.between_lines;
         }
     }
 
@@ -647,11 +664,13 @@ impl App {
             Ok(result) => {
                 let between_keys = result.between_keys.unwrap_or(self.between_keys);
                 let between_lines = result.between_lines.unwrap_or(self.between_lines);
+                let transposition = result.meta.transposition;
                 let bookmark = storage::Bookmark {
                     name: result.name.clone(),
                     notes: result.notes,
                     between_keys,
                     between_lines,
+                    import_meta: Some(result.meta),
                 };
                 if let Err(e) = storage::save_bookmark(&bookmark) {
                     self.status = format!("Импорт ОК, ошибка сохранения: {e}");
@@ -666,7 +685,7 @@ impl App {
                 if result.between_keys.is_some() {
                     status += &format!(" (задержки: {between_keys:.3}s)");
                 }
-                if let Some(t) = result.transposition {
+                if let Some(t) = transposition {
                     status += &format!(" [транспозиция: {t:+}]");
                 }
                 self.status = status;

@@ -20,12 +20,9 @@ impl std::fmt::Display for ImportError {
 pub struct ImportResult {
     pub name: String,
     pub notes: String,
-    /// Рассчитанная задержка между клавишами (None — использовать дефолт приложения).
     pub between_keys: Option<f64>,
-    /// Рассчитанная задержка между строками (None — использовать дефолт приложения).
     pub between_lines: Option<f64>,
-    /// Транспозиция в полутонах (информационно, для будущего использования).
-    pub transposition: Option<i32>,
+    pub meta: crate::storage::ImportMeta,
 }
 
 /// Импортирует мелодию из URL. Определяет сайт и вызывает нужный парсер.
@@ -34,7 +31,7 @@ pub fn import(url: &str) -> Result<ImportResult, ImportError> {
     let body = fetch(url)?;
     crate::debug::log(&format!("[importer] fetched {} bytes", body.len()));
     if url.contains("virtualpiano.net") {
-        parse_virtualpiano(&body)
+        parse_virtualpiano(&body, url)
     } else {
         let msg = "Сайт не поддерживается";
         crate::debug::log(&format!("[importer] {msg}: {url}"));
@@ -63,7 +60,7 @@ fn fetch(url: &str) -> Result<String, ImportError> {
 /// Ноты — в `<p>` внутри `<div id="sheet-content">`.
 /// Формат: `||` = разделитель строк, `|` = разделитель битов внутри строки (→ пробел).
 /// Задержки: TEMPO (BPM) если есть, иначе TARGET LENGTH с поправкой 0.5.
-fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
+fn parse_virtualpiano(html: &str, url: &str) -> Result<ImportResult, ImportError> {
     crate::debug::log("[importer] parse_virtualpiano: start");
     let name = extract_title_virtualpiano(html);
     crate::debug::log(&format!("[importer] title: {name}"));
@@ -71,21 +68,28 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
         .ok_or_else(|| ImportError::Parse("Ноты не найдены на странице".to_string()))?;
     crate::debug::log(&format!("[importer] notes length: {} chars", notes.len()));
 
+    let tempo_bpm = extract_tempo(html);
+    let target_length_secs = extract_target_length(html);
     let transposition = extract_transposition(html);
-    if let Some(t) = transposition {
-        crate::debug::log(&format!("[importer] transposition: {t}"));
-    }
 
-    let (between_keys, between_lines) = calc_delays(&notes, html);
+    if let Some(t) = transposition { crate::debug::log(&format!("[importer] transposition: {t}")); }
+    if let Some(b) = tempo_bpm    { crate::debug::log(&format!("[importer] tempo: {b} BPM")); }
 
-    Ok(ImportResult { name, notes, between_keys, between_lines, transposition })
+    let (between_keys, between_lines) = calc_delays_from(&notes, tempo_bpm, target_length_secs);
+
+    let meta = crate::storage::ImportMeta {
+        source_url: url.to_string(),
+        tempo_bpm,
+        target_length_secs,
+        transposition,
+    };
+
+    Ok(ImportResult { name, notes, between_keys, between_lines, meta })
 }
 
-/// Вычисляет задержки.
-///
-/// TARGET LENGTH / tokens — основная метрика: делит реальное время на число нажатий.
-/// TEMPO (BPM) — только фоллбэк: музыкальный бит ≠ нота (в одном бите может быть много нот).
-fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
+/// Вычисляет задержки по сырым метаданным и числу токенов в нотах.
+/// Вызывается и при импорте, и при валидации (с обновлённым числом токенов).
+pub fn calc_delays_from(notes: &str, tempo_bpm: Option<u32>, target_length_secs: Option<f64>) -> (Option<f64>, Option<f64>) {
     const HUMAN_FACTOR: f64 = 0.65;
     const MIN_DELAY: f64 = 0.05;
     const MAX_DELAY: f64 = 2.0;
@@ -95,7 +99,7 @@ fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
         .sum();
 
     // Приоритет 1: TARGET LENGTH / tokens
-    if let Some(total) = extract_target_length(html) {
+    if let Some(total) = target_length_secs {
         if num_tokens >= 1.0 {
             let k = ((total * HUMAN_FACTOR) / num_tokens).clamp(MIN_DELAY, MAX_DELAY);
             crate::debug::log(&format!(
@@ -106,7 +110,7 @@ fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
     }
 
     // Фоллбэк: TEMPO BPM
-    if let Some(bpm) = extract_tempo(html) {
+    if let Some(bpm) = tempo_bpm {
         let k = (60.0 / bpm as f64).clamp(MIN_DELAY, MAX_DELAY);
         crate::debug::log(&format!("[importer] fallback TEMPO={bpm} BPM => {k:.3}s"));
         return (Some(k), Some(k));
