@@ -86,7 +86,7 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
 /// - TARGET LENGTH: `total × HUMAN_FACTOR / tokens`
 /// Если оба есть — берём среднее арифметическое.
 fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
-    const HUMAN_FACTOR: f64 = 0.5;
+    const HUMAN_FACTOR: f64 = 0.65;
     const MIN_DELAY: f64 = 0.05;
     const MAX_DELAY: f64 = 2.0;
 
