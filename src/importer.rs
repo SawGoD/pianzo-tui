@@ -195,7 +195,9 @@ fn extract_notes_virtualpiano(html: &str) -> Option<String> {
 
     crate::debug::log(&format!("[importer] raw notes preview: {:.120}", raw));
 
-    let decoded = html_decode(&strip_tags(raw));
+    // <br> → перенос строки до strip_tags, иначе теряется структура
+    let with_newlines = raw.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n");
+    let decoded = html_decode(&strip_tags(&with_newlines));
 
     // `||` — разделитель строк (тактов), `|` — разделитель битов внутри строки.
     // Заменяем `||` → \n, затем `|` → пробел.
