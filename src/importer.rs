@@ -81,42 +81,50 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
     Ok(ImportResult { name, notes, between_keys, between_lines, transposition })
 }
 
-/// Вычисляет задержки.
-///
-/// Приоритеты:
-/// 1. TEMPO (BPM) — `between_keys = 60 / BPM`
-/// 2. TARGET LENGTH с поправкой HUMAN_FACTOR=0.5 (человек играет медленнее)
+/// Вычисляет задержки из доступных источников:
+/// - TEMPO (BPM): `60 / BPM`
+/// - TARGET LENGTH: `total × HUMAN_FACTOR / tokens`
+/// Если оба есть — берём среднее арифметическое.
 fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
     const HUMAN_FACTOR: f64 = 0.5;
     const MIN_DELAY: f64 = 0.05;
     const MAX_DELAY: f64 = 2.0;
 
-    // Приоритет 1: TEMPO
-    if let Some(bpm) = extract_tempo(html) {
-        let k = (60.0 / bpm as f64).clamp(MIN_DELAY, MAX_DELAY);
-        crate::debug::log(&format!("[importer] TEMPO={bpm} BPM => between_keys={k:.3}s"));
-        return (Some(k), Some(k));
-    }
-
-    // Приоритет 2: TARGET LENGTH
-    let Some(total) = extract_target_length(html) else {
-        crate::debug::log("[importer] no TEMPO and no TARGET LENGTH, using app defaults");
-        return (None, None);
-    };
+    let tempo_k = extract_tempo(html).map(|bpm| {
+        let k = 60.0 / bpm as f64;
+        crate::debug::log(&format!("[importer] TEMPO={bpm} BPM => {k:.3}s"));
+        k
+    });
 
     let num_tokens: f64 = notes.lines()
         .map(|l| l.split_whitespace().count() as f64)
         .sum();
 
-    if num_tokens < 1.0 {
-        return (None, None);
-    }
+    let length_k = extract_target_length(html).and_then(|total| {
+        if num_tokens < 1.0 { return None; }
+        let k = (total * HUMAN_FACTOR) / num_tokens;
+        crate::debug::log(&format!(
+            "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} factor={HUMAN_FACTOR} => {k:.3}s"
+        ));
+        Some(k)
+    });
 
-    let k = ((total * HUMAN_FACTOR) / num_tokens).clamp(MIN_DELAY, MAX_DELAY);
-    crate::debug::log(&format!(
-        "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} factor={HUMAN_FACTOR} => between_keys={k:.3}s"
-    ));
+    let k = match (tempo_k, length_k) {
+        (Some(a), Some(b)) => {
+            let avg = (a + b) / 2.0;
+            crate::debug::log(&format!("[importer] avg({a:.3}, {b:.3}) => {avg:.3}s"));
+            avg
+        }
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        (None, None) => {
+            crate::debug::log("[importer] no timing data, using app defaults");
+            return (None, None);
+        }
+    };
 
+    let k = k.clamp(MIN_DELAY, MAX_DELAY);
+    crate::debug::log(&format!("[importer] final between_keys={k:.3}s"));
     (Some(k), Some(k))
 }
 
