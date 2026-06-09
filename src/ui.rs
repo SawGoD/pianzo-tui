@@ -163,7 +163,7 @@ fn draw_body(frame: &mut Frame, app: &mut App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(th))
-            .title(" Параметры — [e] правка  [v] валидация "),
+            .title(" Параметры — [e] правка "),
     );
     frame.render_widget(params, right[0]);
 
@@ -180,7 +180,13 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         app.selected_bookmark().map(|b| b.notes.as_str()).unwrap_or("")
     };
     let note_count = display_notes.split_whitespace().count();
-    let title = format!(" Ноты ({note_count}) — [e] правка ");
+    let has_import_meta = !playing
+        && app.selected_bookmark().and_then(|b| b.import_meta.as_ref()).is_some();
+    let title = if has_import_meta {
+        format!(" Ноты ({note_count}) — [e] правка  [v] валидация ")
+    } else {
+        format!(" Ноты ({note_count}) — [e] правка ")
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme(app)))
