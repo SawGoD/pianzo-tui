@@ -18,6 +18,24 @@ pub struct Bookmark {
     pub notes: String,
     pub between_keys: f64,
     pub between_lines: f64,
+    /// Метаданные импорта — заполняются только при импорте с сайта.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_meta: Option<ImportMeta>,
+}
+
+/// Метаданные оригинального источника (для пересчёта задержек после валидации).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ImportMeta {
+    pub source_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tempo_bpm: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_length_secs: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transposition: Option<i32>,
+    /// true — ноты уже прошли валидацию пробелами.
+    #[serde(default)]
+    pub validated: bool,
 }
 
 /// Базовый каталог документов (`~/Documents`).
@@ -118,6 +136,7 @@ fn default_bookmark() -> Bookmark {
         notes: include_str!("../assets/fur_elise.txt").trim_end().to_string(),
         between_keys: 0.165,
         between_lines: 0.160,
+        import_meta: None,
     }
 }
 

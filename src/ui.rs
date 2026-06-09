@@ -47,6 +47,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Mode::Settings => draw_settings(frame, app),
         Mode::CaptureStart => draw_capture(frame, "СТАРТА"),
         Mode::CaptureStop => draw_capture(frame, "СТОПА"),
+        Mode::ImportUrl => draw_import_url_modal(frame, app),
         Mode::Normal => {}
     }
 }
@@ -179,7 +180,15 @@ fn draw_notes_panel(frame: &mut Frame, app: &App, area: Rect) {
         app.selected_bookmark().map(|b| b.notes.as_str()).unwrap_or("")
     };
     let note_count = display_notes.split_whitespace().count();
-    let title = format!(" Ноты ({note_count}) — [e] правка ");
+    let has_import_meta = !playing
+        && app.selected_bookmark()
+            .and_then(|b| b.import_meta.as_ref())
+            .is_some_and(|m| !m.validated);
+    let title = if has_import_meta {
+        format!(" Ноты ({note_count}) — [e] правка  [v] валидация ")
+    } else {
+        format!(" Ноты ({note_count}) — [e] правка ")
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme(app)))
@@ -1269,6 +1278,38 @@ fn draw_settings_processes(
         ))
     };
     frame.render_widget(Paragraph::new(hint), hint_area);
+}
+
+fn draw_import_url_modal(frame: &mut Frame, app: &App) {
+    let height = if app.import_error.is_some() { 5 } else { 5 };
+    let area = modal_rect(70, height, frame.area());
+    frame.render_widget(Clear, area);
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::raw(app.input.as_str()),
+            Span::styled("▏", Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Enter — импорт  Esc — отмена",
+            Style::default().fg(Color::Gray),
+        )),
+    ];
+    if let Some(err) = &app.import_error {
+        lines.push(Line::from(Span::styled(
+            err.clone(),
+            Style::default().fg(Color::Red),
+        )));
+    }
+
+    let para = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(" Импорт по URL  (virtualpiano.net) "),
+    );
+    frame.render_widget(para, area);
 }
 
 fn draw_capture(frame: &mut Frame, target: &str) {

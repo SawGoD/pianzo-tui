@@ -1,1 +1,41 @@
+# Environment
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# IDE / editors
+.vscode/
+.vs_code/
+.idea/
+*.iml
+
+# Rust build output
+target/
+
+# Rustfmt backup files
+**/*.rs.bk
+
+# Coverage / profiling
+coverage/
+tarpaulin-report.html
+*.profraw
+*.profdata
+
+# Logs
+*.log
+logs/
+
+# Temp
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# --- User rules (preserved by git-screen) ---
 /target
+CLAUDE.md

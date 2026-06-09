@@ -11,6 +11,7 @@ use crate::notifications::NotificationConfig;
 use crate::parser::TokenSpan;
 use crate::processes::{self, ProcessConfig, ProcessEntry, ProcessMode};
 use crate::storage::{self, Bookmark};
+use crate::importer;
 use crate::updater::{self, UpdateMsg};
 
 /// Текущий режим ввода TUI.
@@ -32,6 +33,8 @@ pub enum Mode {
     CaptureStart,
     /// Захват новой комбинации для стопа.
     CaptureStop,
+    /// Ввод URL для импорта мелодии.
+    ImportUrl,
 }
 
 /// Разделы в меню настроек.
@@ -184,6 +187,9 @@ pub struct App {
     /// Индекс текущего проигрываемого события.
     pub play_event: usize,
 
+    /// Ошибка последнего импорта (отображается в статусе).
+    pub import_error: Option<String>,
+
     pub should_quit: bool,
 
     /// Состояние автообновления.
@@ -243,6 +249,7 @@ impl App {
             play_notes: String::new(),
             spans: Vec::new(),
             play_event: 0,
+            import_error: None,
             should_quit: false,
             update_state: UpdateState::Checking,
             upd_tx,
@@ -393,6 +400,7 @@ impl App {
             notes: notes.clone(),
             between_keys: bk,
             between_lines: bl,
+            import_meta: None,
         };
         if let Err(e) = storage::save_bookmark(&bookmark) {
             self.status = format!("Ошибка сохранения: {e}");
@@ -610,4 +618,113 @@ impl App {
         let _ = self.persist_config();
         self.status = format!("Громкость: {}%", self.volume_pct());
     }
+
+    /// Валидирует ноты наведённой закладки: добавляет пробелы между символами
+    /// вне скобок `[...]`. Сохраняет изменённую закладку на диск.
+    pub fn validate_hovered(&mut self) {
+        let Some(idx) = self.selected() else { return };
+        let original = self.bookmarks[idx].notes.clone();
+        let validated = validate_notes(&original);
+        if validated == original {
+            self.status = "Ноты уже корректны, изменений нет".to_string();
+            return;
+        }
+        self.bookmarks[idx].notes = validated;
+
+        // Пересчитываем задержки по метаданным импорта с новым числом токенов
+        if let Some(meta) = &self.bookmarks[idx].import_meta.clone() {
+            let (bk, bl) = importer::calc_delays_from(
+                &self.bookmarks[idx].notes,
+                meta.tempo_bpm,
+                meta.target_length_secs,
+            );
+            if let Some(k) = bk { self.bookmarks[idx].between_keys = k; }
+            if let Some(l) = bl { self.bookmarks[idx].between_lines = l; }
+        }
+        if let Some(meta) = self.bookmarks[idx].import_meta.as_mut() {
+            meta.validated = true;
+        }
+
+        let bookmark = self.bookmarks[idx].clone();
+        match storage::save_bookmark(&bookmark) {
+            Ok(_) => self.status = format!(
+                "Валидировано: {} (задержки: {:.3}s)",
+                bookmark.name, bookmark.between_keys
+            ),
+            Err(e) => self.status = format!("Ошибка сохранения: {e}"),
+        }
+        if self.current_name.as_deref() == Some(&bookmark.name) {
+            self.notes = bookmark.notes.clone();
+            self.between_keys = bookmark.between_keys;
+            self.between_lines = bookmark.between_lines;
+        }
+    }
+
+    /// Запускает импорт мелодии по URL. Блокирующий (HTTP-запрос в main-потоке).
+    pub fn import_from_url(&mut self, url: &str) {
+        self.import_error = None;
+        match importer::import(url.trim()) {
+            Ok(result) => {
+                let between_keys = result.between_keys.unwrap_or(self.between_keys);
+                let between_lines = result.between_lines.unwrap_or(self.between_lines);
+                let transposition = result.meta.transposition;
+                let bookmark = storage::Bookmark {
+                    name: result.name.clone(),
+                    notes: result.notes,
+                    between_keys,
+                    between_lines,
+                    import_meta: Some(result.meta),
+                };
+                if let Err(e) = storage::save_bookmark(&bookmark) {
+                    self.status = format!("Импорт ОК, ошибка сохранения: {e}");
+                    return;
+                }
+                self.bookmarks.push(bookmark);
+                self.bookmarks.sort_by_key(|b| b.name.to_lowercase());
+                let idx = self.bookmarks.iter().position(|b| b.name == result.name).unwrap_or(0);
+                self.list_state.select(Some(idx));
+                self.load_bookmark(idx);
+                let mut status = format!("Импортировано: {}", result.name);
+                if result.between_keys.is_some() {
+                    status += &format!(" (задержки: {between_keys:.3}s)");
+                }
+                if let Some(t) = transposition {
+                    status += &format!(" [транспозиция: {t:+}]");
+                }
+                self.status = status;
+            }
+            Err(e) => {
+                self.import_error = Some(e.to_string());
+                self.status = e.to_string();
+            }
+        }
+        self.mode = Mode::Normal;
+    }
+}
+
+/// Расставляет пробелы между символами вне `[...]`.
+/// `ipasap[sk]ao` → `i p a s a p [sk] a o`
+pub fn validate_notes(notes: &str) -> String {
+    notes.lines().map(|line| validate_line(line)).collect::<Vec<_>>().join("\n")
+}
+
+fn validate_line(line: &str) -> String {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '[' {
+            // собираем аккорд до ']'
+            let mut chord = String::from('[');
+            for inner in chars.by_ref() {
+                chord.push(inner);
+                if inner == ']' { break; }
+            }
+            tokens.push(chord);
+        } else if c == ' ' {
+            // уже есть пробел — пропускаем, не дублируем
+        } else {
+            tokens.push(c.to_string());
+        }
+    }
+    tokens.join(" ")
 }

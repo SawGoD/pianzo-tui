@@ -1,6 +1,6 @@
 [package]
 name = "pianzo-tui"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "TUI-автонажиматель нот: проигрывает мелодии в активном окне, с закладками и глобальными хоткеями"
 
@@ -16,6 +16,7 @@ serde_json = "1"
 dirs = "5"
 notify-rust = { version = "4", optional = true }
 sysinfo = "0.30"
+ureq = { version = "2", features = ["tls"] }
 self_update = { version = "0.39", default-features = false, features = [
     "archive-tar",
     "archive-zip",
