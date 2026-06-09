@@ -11,6 +11,7 @@ use crate::notifications::NotificationConfig;
 use crate::parser::TokenSpan;
 use crate::processes::{self, ProcessConfig, ProcessEntry, ProcessMode};
 use crate::storage::{self, Bookmark};
+use crate::importer;
 use crate::updater::{self, UpdateMsg};
 
 /// Текущий режим ввода TUI.
@@ -32,6 +33,8 @@ pub enum Mode {
     CaptureStart,
     /// Захват новой комбинации для стопа.
     CaptureStop,
+    /// Ввод URL для импорта мелодии.
+    ImportUrl,
 }
 
 /// Разделы в меню настроек.
@@ -184,6 +187,9 @@ pub struct App {
     /// Индекс текущего проигрываемого события.
     pub play_event: usize,
 
+    /// Ошибка последнего импорта (отображается в статусе).
+    pub import_error: Option<String>,
+
     pub should_quit: bool,
 
     /// Состояние автообновления.
@@ -243,6 +249,7 @@ impl App {
             play_notes: String::new(),
             spans: Vec::new(),
             play_event: 0,
+            import_error: None,
             should_quit: false,
             update_state: UpdateState::Checking,
             upd_tx,
@@ -609,5 +616,44 @@ impl App {
         }
         let _ = self.persist_config();
         self.status = format!("Громкость: {}%", self.volume_pct());
+    }
+
+    /// Запускает импорт мелодии по URL. Блокирующий (HTTP-запрос в main-потоке).
+    pub fn import_from_url(&mut self, url: &str) {
+        self.import_error = None;
+        match importer::import(url.trim()) {
+            Ok(result) => {
+                let between_keys = result.between_keys.unwrap_or(self.between_keys);
+                let between_lines = result.between_lines.unwrap_or(self.between_lines);
+                let bookmark = storage::Bookmark {
+                    name: result.name.clone(),
+                    notes: result.notes,
+                    between_keys,
+                    between_lines,
+                };
+                if let Err(e) = storage::save_bookmark(&bookmark) {
+                    self.status = format!("Импорт ОК, ошибка сохранения: {e}");
+                    return;
+                }
+                self.bookmarks.push(bookmark);
+                self.bookmarks.sort_by_key(|b| b.name.to_lowercase());
+                let idx = self.bookmarks.iter().position(|b| b.name == result.name).unwrap_or(0);
+                self.list_state.select(Some(idx));
+                self.load_bookmark(idx);
+                if result.between_keys.is_some() {
+                    self.status = format!(
+                        "Импортировано: {} (задержки: {:.3}s / {:.3}s)",
+                        result.name, between_keys, between_lines
+                    );
+                } else {
+                    self.status = format!("Импортировано: {}", result.name);
+                }
+            }
+            Err(e) => {
+                self.import_error = Some(e.to_string());
+                self.status = e.to_string();
+            }
+        }
+        self.mode = Mode::Normal;
     }
 }

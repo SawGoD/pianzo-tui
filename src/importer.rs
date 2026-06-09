@@ -20,6 +20,10 @@ impl std::fmt::Display for ImportError {
 pub struct ImportResult {
     pub name: String,
     pub notes: String,
+    /// Рассчитанная задержка между клавишами (None — использовать дефолт приложения).
+    pub between_keys: Option<f64>,
+    /// Рассчитанная задержка между строками (None — использовать дефолт приложения).
+    pub between_lines: Option<f64>,
 }
 
 /// Импортирует мелодию из URL. Определяет сайт и вызывает нужный парсер.
@@ -54,9 +58,8 @@ fn fetch(url: &str) -> Result<String, ImportError> {
 
 /// Парсит страницу virtualpiano.net/music-sheet/...
 ///
-/// Ноты лежат в `<p>` внутри `<div id="sheet-content">`.
-/// Строки разделены `||`; пустые строки (из `||||`) игнорируются.
-/// Имя берётся из `<title>`.
+/// Ноты — в `<p>` внутри `<div id="sheet-content">`, строки разделены `||`.
+/// Задержки рассчитываются из TARGET LENGTH и количества токенов/строк.
 fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
     crate::debug::log("[importer] parse_virtualpiano: start");
     let name = extract_title_virtualpiano(html);
@@ -64,17 +67,75 @@ fn parse_virtualpiano(html: &str) -> Result<ImportResult, ImportError> {
     let notes = extract_notes_virtualpiano(html)
         .ok_or_else(|| ImportError::Parse("Ноты не найдены на странице".to_string()))?;
     crate::debug::log(&format!("[importer] notes length: {} chars", notes.len()));
-    Ok(ImportResult { name, notes })
+
+    let (between_keys, between_lines) = calc_delays(&notes, html);
+
+    Ok(ImportResult { name, notes, between_keys, between_lines })
+}
+
+/// Вычисляет задержки на основе TARGET LENGTH и числа токенов/строк.
+///
+/// Модель: total = (tokens - lines) × k + lines × (k × LINE_RATIO)
+///   => k = total / (tokens - lines + lines × LINE_RATIO)
+///
+/// LINE_RATIO = 1.5 — строковая пауза длиннее межклавишной в 1.5 раза.
+fn calc_delays(notes: &str, html: &str) -> (Option<f64>, Option<f64>) {
+    const LINE_RATIO: f64 = 1.5;
+    const MIN_DELAY: f64 = 0.05;
+    const MAX_DELAY: f64 = 2.0;
+
+    let target_secs = extract_target_length(html);
+    let Some(total) = target_secs else {
+        crate::debug::log("[importer] TARGET LENGTH not found, using app defaults");
+        return (None, None);
+    };
+
+    // Считаем токены и строки по тем же правилам, что и parser.rs
+    let lines: Vec<&str> = notes.lines().collect();
+    let num_lines = lines.len() as f64;
+    let num_tokens: f64 = lines.iter()
+        .map(|l| l.split_whitespace().count() as f64)
+        .sum();
+
+    if num_tokens < 1.0 {
+        return (None, None);
+    }
+
+    let denominator = (num_tokens - num_lines) + num_lines * LINE_RATIO;
+    if denominator <= 0.0 {
+        return (None, None);
+    }
+
+    let k = (total / denominator).clamp(MIN_DELAY, MAX_DELAY);
+    let l = (k * LINE_RATIO).clamp(MIN_DELAY, MAX_DELAY);
+
+    crate::debug::log(&format!(
+        "[importer] TARGET LENGTH={total:.1}s tokens={num_tokens} lines={num_lines} => between_keys={k:.3}s between_lines={l:.3}s"
+    ));
+
+    (Some(k), Some(l))
+}
+
+/// Извлекает TARGET LENGTH в секундах из `<span id="target-length">M:SS</span>`.
+fn extract_target_length(html: &str) -> Option<f64> {
+    let marker = "id=\"target-length\">";
+    let pos = html.find(marker)?;
+    let rest = &html[pos + marker.len()..];
+    let end = rest.find('<')?;
+    let raw = rest[..end].trim();
+    // формат M:SS или MM:SS
+    let mut parts = raw.splitn(2, ':');
+    let mins: f64 = parts.next()?.trim().parse().ok()?;
+    let secs: f64 = parts.next()?.trim().parse().ok()?;
+    let total = mins * 60.0 + secs;
+    crate::debug::log(&format!("[importer] TARGET LENGTH raw='{raw}' => {total}s"));
+    Some(total)
 }
 
 fn extract_title_virtualpiano(html: &str) -> String {
-    // <title>Play NAME Music Sheet | ...</title>
     if let Some(s) = between(html, "<title>", "</title>") {
         let s = strip_tags(s);
-        // убрать "Play " в начале и " Music Sheet | ..." в конце
-        let s = s.trim()
-            .trim_start_matches("Play ")
-            .to_string();
+        let s = s.trim().trim_start_matches("Play ").to_string();
         let s = if let Some(pos) = s.find(" Music Sheet") {
             s[..pos].trim().to_string()
         } else if let Some(pos) = s.find(" | ") {
@@ -90,12 +151,9 @@ fn extract_title_virtualpiano(html: &str) -> String {
 }
 
 fn extract_notes_virtualpiano(html: &str) -> Option<String> {
-    // Ноты в <p> внутри <div id="sheet-content" ...>
-    // Структура: id="sheet-content" class="..."><...виджеты...><p>НОТЫ</p>
     let marker = "id=\"sheet-content\"";
     let pos = html.find(marker)?;
     let rest = &html[pos + marker.len()..];
-    // найти первый <p>
     let p_start = rest.find("<p")?;
     let inner_start = rest[p_start..].find('>')? + p_start + 1;
     let inner_end = rest[inner_start..].find("</p>")?;
@@ -103,10 +161,7 @@ fn extract_notes_virtualpiano(html: &str) -> Option<String> {
 
     crate::debug::log(&format!("[importer] raw notes preview: {:.120}", raw));
 
-    // Убрать HTML-теги, декодировать сущности
     let decoded = html_decode(&strip_tags(raw));
-
-    // Разделитель строк — "||"; заменяем на переводы строк, убираем пустые
     let notes: String = decoded
         .split("||")
         .map(|line| line.trim())
@@ -124,14 +179,12 @@ fn extract_notes_virtualpiano(html: &str) -> Option<String> {
 
 // --- Минимальные HTML-утилиты (без внешних зависимостей) ---
 
-/// Возвращает текст между двумя подстроками.
 fn between<'a>(s: &'a str, open: &str, close: &str) -> Option<&'a str> {
     let start = s.find(open)? + open.len();
     let end = s[start..].find(close)?;
     Some(&s[start..start + end])
 }
 
-/// Убирает HTML-теги.
 fn strip_tags(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_tag = false;
@@ -146,7 +199,6 @@ fn strip_tags(s: &str) -> String {
     out
 }
 
-/// Декодирует HTML-сущности (&amp; &lt; &#39; и т.д.).
 fn html_decode(s: &str) -> String {
     s.replace("&amp;", "&")
         .replace("&lt;", "<")
